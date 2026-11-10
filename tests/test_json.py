@@ -46,6 +46,7 @@ class JsonReportTests(unittest.TestCase):
             data = json.loads(report.read_text())
             self.assertEqual(data['exit_code'], result.returncode)
             self.assertEqual(data['flows'], [])
+            self.assertEqual(data['servers'][0]['data']['expectations'], [])
             self.assertIn('INFO CPU', result.stderr)
             metrics = data['servers'][0]['data']
             self.assertGreater(metrics['cpu']['logical_count'], 0)
@@ -181,6 +182,72 @@ class JsonReportTests(unittest.TestCase):
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 1)
             self.assertEqual(json.loads(result.stdout)['status'], status)
+
+    def test_expectations_comparison_and_missing_mount(self):
+        source = SCRIPT.read_text().rsplit('main "$@"', 1)[0]
+        command = source + r'''
+expected_hosts=(localhost localhost localhost localhost localhost localhost)
+expected_resources=(cpu ram swap filesystem_size filesystem_available filesystem_use)
+expected_mounts=('' '' '' / /missing /)
+expected_operators=(eq ge eq ge ge le)
+expected_values=(4 8 0 1 1 50)
+expected_units=(count MiB MiB MiB MiB percent)
+cpu_count=4; ram_total=8192; swap_total=0
+failed=0; errors=0; disks_ok=1
+disks=$'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/root 2048 1024 1024 50% /'
+check_expectations localhost >&2
+printf '{"checks":%s,"failed":%s,"errors":%s}' "$checks" "$failed" "$errors"
+'''
+        result = subprocess.run(['bash', '-c', command], capture_output=True, text=True, check=True)
+        data = json.loads(result.stdout)
+        self.assertEqual([check['status'] for check in data['checks']],
+                         ['pass', 'pass', 'pass', 'pass', 'fail', 'pass'])
+        self.assertEqual(data['checks'][1]['expected'], 8192)
+        self.assertIsNone(data['checks'][4]['actual'])
+        self.assertEqual(data['failed'], 1)
+        self.assertEqual(data['errors'], 0)
+        result = subprocess.run(['bash', '-c', command.replace('ram_total=8192', "ram_total=''")],
+                                capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(result.stdout)['checks'][1]['status'], 'error')
+
+    def test_expectations_remote_and_optional(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ssh = root / 'ssh'
+            ssh.write_text('#!/bin/bash\nbash -s\n')
+            ssh.chmod(0o755)
+            inventory = root / 'hosts.csv'
+            inventory.write_text('host,user,port\nremote01,audit,22\n')
+            expectations = root / 'expected.csv'
+            expectations.write_text('host,resource,mountpoint,operator,value,unit\n'
+                                    'remote01,cpu,,ge,999999,count\n')
+            report = root / 'report.json'
+            subprocess.run(['bash', str(SCRIPT), '--inventory', str(inventory),
+                            '--expectations', str(expectations), '--json', str(report)],
+                           env=dict(os.environ, PATH=directory + ':' + os.environ['PATH']),
+                           capture_output=True, text=True)
+            checks = json.loads(report.read_text())['servers'][0]['data']['expectations']
+            self.assertEqual(len(checks), 1)
+            self.assertEqual(checks[0]['status'], 'fail')
+            self.assertEqual(checks[0]['expected'], 999999)
+
+    def test_invalid_expectations_before_collection(self):
+        rows = ['localhost,cpu,,ge,-1,count', 'localhost,ram,,ge,8,GB',
+                'localhost,filesystem_size,relative,ge,1,MiB',
+                'unknown,cpu,,ge,1,count', 'localhost,cpu,,wrong,1,count',
+                'localhost,cpu,,ge,1,count\nlocalhost,cpu,,ge,2,count']
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for row in rows:
+                with self.subTest(row=row):
+                    expected = root / 'expectations.csv'
+                    expected.write_text(row)
+                    report = root / 'report.json'
+                    result = subprocess.run(['bash', str(SCRIPT), '--localhost',
+                                             '--expectations', str(expected), '--json', str(report)],
+                                            capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 2)
+                    self.assertFalse(report.exists())
 
     def test_remote_transport_and_continuation(self):
         with tempfile.TemporaryDirectory() as directory:

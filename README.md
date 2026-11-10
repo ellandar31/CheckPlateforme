@@ -154,3 +154,53 @@ confirmer l'ouverture du flux. Aucun succès UDP n'est annoncé par défaut.
 Un échec de connectivité contribue au code global **1** ; un test indéterminé,
 un outil manquant ou une erreur d'exécution contribue au code **2**.
 Les erreurs de plateforme et de flux sont agrégées (2 prioritaire sur 1).
+
+## Attendus par serveur (optionnels)
+
+L'option `--expectations` compare les mesures aux exigences de livraison, sans
+installation supplémentaire. Elle est indépendante de `--flows` et peut être
+utilisée seule ou avec la matrice réseau :
+
+```bash
+bash bin/checkplateforme.sh --localhost --expectations examples/attentes.csv --json conformite.json
+bash bin/checkplateforme.sh --inventory exemples-parc.csv --expectations attentes-parc.csv --flows flux.csv --json parc.json
+```
+
+CSV de six colonnes, avec en-tête facultatif :
+
+```csv
+host,resource,mountpoint,operator,value,unit
+localhost,cpu,,ge,4,count
+localhost,ram,,ge,8192,MiB
+localhost,swap,,eq,0,MiB
+localhost,filesystem_size,/,ge,20480,MiB
+localhost,filesystem_available,/var,ge,2048,MiB
+localhost,filesystem_use,/var,le,90,percent
+```
+
+- `host` : nom exact dans l'inventaire ; pour `--localhost`, écrire `localhost`.
+- `cpu` : nombre de processeurs logiques en ligne (`count`).
+- `ram` et `swap` : capacité totale, en `MiB` (1 MiB = 1 024 kio).
+- `filesystem_size` : capacité totale du filesystem monté au chemin indiqué.
+- `filesystem_available` : espace disponible sur ce filesystem, en MiB.
+- `filesystem_use` : pourcentage d'utilisation (`percent`).
+- `ge` : supérieur ou égal ; `eq` : égal ; `le` : inférieur ou égal.
+
+Le point de montage est obligatoire pour les ressources filesystem et doit être
+vide pour CPU/RAM/swap. La valeur est un entier positif ou nul (12 chiffres maximum).
+Les exigences filesystem portent sur un **point de montage exact** : `/var`
+absent de la liste des montages est un écart, même si le dossier existe sur `/`.
+Plusieurs règles peuvent viser un serveur ; les autres serveurs sont collectés
+sans contrôle d'attendus. Les règles strictement dupliquées sont refusées.
+Les hôtes non sélectionnés, unités et règles invalides sont rejetés avant collecte.
+
+Chaque résultat est affiché en console et dans `servers[].data.expectations` :
+ressource, point de montage, opérateur, attendu, mesuré, unité et statut
+`pass`, `fail` ou `error`. Les valeurs MiB du CSV sont converties en `KiB` dans
+le JSON pour une comparaison précise avec les mesures de `/proc` et `df`.
+Une mesure inconnue vaut `null`. Un écart contribue au code **1**, une erreur
+au code **2**, qui reste prioritaire. Sans l'option, `expectations` est vide.
+
+La RAM mesurée est la mémoire utilisable par Linux (`MemTotal`), qui peut être
+légèrement inférieure à la RAM physique allouée. Prévoir cette différence dans
+le seuil de livraison, plutôt qu'une égalité stricte avec la capacité nominale.

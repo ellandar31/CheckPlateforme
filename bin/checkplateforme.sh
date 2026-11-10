@@ -1,7 +1,7 @@
 #!/bin/bash
 set -u
 usage() {
-    printf 'Usage : %s (--localhost | --inventory FICHIER) [--json RAPPORT.json] [--flows MATRICE.csv]\n' "$0"
+    printf 'Usage : %s (--localhost | --inventory FICHIER) [--json RAPPORT.json] [--flows MATRICE.csv] [--expectations ATTENTES.csv]\n' "$0"
 }
 # Encode une chaîne JSON sans dépendre de Python ou jq.
 json_string() {
@@ -51,6 +51,7 @@ filesystems_json() {
     return "$invalid"
 }
 collect() {
+    local checks='[]' disks_ok=1
     local id='' key value errors=0 failed=0 kernel='' disks='' filesystems='[]' system_state='' failed_units='' rc=0
     printf '\n=== %s ===\n' "${HOSTNAME:-serveur}"
     if [[ -r /etc/os-release ]]; then
@@ -121,9 +122,9 @@ collect() {
         printf 'ERREUR /proc/meminfo illisible\n'; errors=1
     fi
     printf 'INFO Systèmes de fichiers\n'
-    disks=$(LC_ALL=C df -Pk) || errors=1
+    disks=$(LC_ALL=C df -Pk) || { errors=1; disks_ok=0; }
     printf '%s\n' "$disks"
-    filesystems=$(filesystems_json "$disks") || errors=1
+    filesystems=$(filesystems_json "$disks") || { errors=1; disks_ok=0; }
     if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
         system_state=$(systemctl is-system-running)
         rc=$?
@@ -136,6 +137,7 @@ collect() {
     else
         printf 'ERREUR systemd indisponible : contrôle non exécuté\n'; errors=1
     fi
+    check_expectations "${1:-localhost}"
     rc=0
     (( failed )) && rc=1
     (( errors )) && rc=2
@@ -159,6 +161,7 @@ collect() {
             printf '%s' "$((swap_total - swap_free))"
         else printf 'null'; fi
         printf '},"filesystems":%s' "$filesystems"
+        printf ',"expectations":%s' "$checks"
         printf ',"systemd":{"state":'; json_string "$system_state"
         printf ',"failed_units_text":'; json_string "$failed_units"
         printf '},"exit_code":%s}\n' "$rc"
@@ -320,8 +323,107 @@ run_flows() {
     printf ']'
     return "$overall"
 }
+load_expectations() {
+    local line number=0 first=1 host resource mountpoint operator value key
+    local -A seen=()
+    [[ -f $expectations_file && -r $expectations_file ]] || { printf 'ERREUR Attendus illisibles\n' >&2; return 2; }
+    while IFS= read -r line || [[ -n $line ]]; do
+        ((number+=1)); line=${line%$'\r'}
+        (( number != 1 )) || line=${line#$'\xef\xbb\xbf'}
+        [[ $line =~ ^[[:space:]]*(#|$) ]] && continue
+        if ! parse_csv_line "$line" 6; then
+            printf 'ERREUR Attendus ligne %s : six colonnes attendues\n' "$number" >&2; return 2
+        fi
+        host=${csv_fields[0]}; resource=${csv_fields[1]}; mountpoint=${csv_fields[2]}
+        operator=${csv_fields[3]}; value=${csv_fields[4]}
+        if (( first )) && [[ $host == host && $resource == resource && $mountpoint == mountpoint && $operator == operator && $value == value && ${csv_fields[5]} == unit ]]; then
+            first=0; continue
+        fi
+        first=0
+        if [[ ( $host != ::1 && ! $host =~ ^[a-zA-Z0-9][a-zA-Z0-9._:-]*$ ) ||
+              ! $value =~ ^[0-9]{1,12}$ || ( $operator != ge && $operator != eq && $operator != le ) ]]; then
+            printf 'ERREUR Attendus ligne %s : hôte, opérateur ou valeur invalide\n' "$number" >&2; return 2
+        fi
+        case "$resource:${csv_fields[5]}" in
+            cpu:count|ram:MiB|swap:MiB) [[ -z $mountpoint ]] || return 2 ;;
+            filesystem_size:MiB|filesystem_available:MiB|filesystem_use:percent)
+                [[ $mountpoint == /* ]] || { printf 'ERREUR Point de montage ligne %s\n' "$number" >&2; return 2; } ;;
+            *) printf 'ERREUR Ressource ou unité ligne %s\n' "$number" >&2; return 2 ;;
+        esac
+        key="$host|$resource|$mountpoint|$operator"
+        [[ ! ${seen[$key]+present} ]] || { printf 'ERREUR Attendu dupliqué ligne %s\n' "$number" >&2; return 2; }
+        seen[$key]=1
+        expected_hosts+=("$host"); expected_resources+=("$resource"); expected_mounts+=("$mountpoint")
+        expected_operators+=("$operator"); expected_values+=("$((10#$value))"); expected_units+=("${csv_fields[5]}")
+    done < "$expectations_file"
+    ((${#expected_hosts[@]})) || { printf 'ERREUR Fichier attendus vide\n' >&2; return 2; }
+}
+validate_expectation_hosts() {
+    local target host found
+    for target in "${expected_hosts[@]}"; do
+        found=0
+        if [[ $mode == local ]]; then
+            [[ $target != localhost ]] || found=1
+        else
+            for host in "${hosts[@]}"; do [[ $host != "$target" ]] || found=1; done
+        fi
+        ((found)) || { printf 'ERREUR Hôte attendu non sélectionné : %s\n' "$target" >&2; return 2; }
+    done
+}
+# Utilise les mesures déjà collectées ; ne relance pas df pour chaque règle.
+check_expectations() {
+    local target=$1 i resource mountpoint operator expected actual unit status line first
+    local separator='' threshold
+    local pattern='^(.+[^[:space:]])[[:space:]]+([0-9]+)[[:space:]]+([0-9]+)[[:space:]]+([0-9]+)[[:space:]]+([0-9]+)%[[:space:]]+(.+)$'
+    checks='['
+    for ((i=0; i<${#expected_hosts[@]}; i++)); do
+        [[ ${expected_hosts[i]} == "$target" ]] || continue
+        resource=${expected_resources[i]}; mountpoint=${expected_mounts[i]}
+        operator=${expected_operators[i]}; expected=${expected_values[i]}
+        unit=${expected_units[i]}; threshold=$expected; actual=''; status=pass
+        case "$resource" in
+            cpu) (( cpu_count > 0 )) && actual=$cpu_count ;;
+            ram) actual=$ram_total ;;
+            swap) actual=$swap_total ;;
+            filesystem_*)
+                first=1
+                while IFS= read -r line; do
+                    if ((first)); then first=0; continue; fi
+                    if [[ $line =~ $pattern && ${BASH_REMATCH[6]} == "$mountpoint" ]]; then
+                        case "$resource" in
+                            filesystem_size) actual=${BASH_REMATCH[2]} ;;
+                            filesystem_available) actual=${BASH_REMATCH[4]} ;;
+                            filesystem_use) actual=${BASH_REMATCH[5]} ;;
+                        esac
+                        break
+                    fi
+                done <<< "$disks" ;;
+        esac
+        if [[ $unit == MiB ]]; then threshold=$((expected * 1024)); unit=KiB; fi
+        if [[ $resource == filesystem_* ]] && (( ! disks_ok )); then
+            actual=''; status=error; errors=1
+        elif [[ -z $actual && $resource == filesystem_* && $disks ]]; then
+            status=fail; failed=1
+        elif [[ ! $actual =~ ^[0-9]+$ ]]; then
+            status=error; errors=1
+        else
+            case "$operator" in
+                ge) (( actual >= threshold )) || status=fail ;;
+                eq) (( actual == threshold )) || status=fail ;;
+                le) (( actual <= threshold )) || status=fail ;;
+            esac
+            [[ $status != fail ]] || failed=1
+        fi
+        printf 'ATTENDU %s %s : %s %s %s ; mesuré=%s (%s)\n' "$resource" "$mountpoint" "$operator" "$threshold" "$unit" "${actual:-absent/inconnu}" "$status"
+        checks+="$separator"'{"resource":'"$(json_string "$resource")"',"mountpoint":'"$(json_string "$mountpoint")"',"operator":'"$(json_string "$operator")"',"expected":'"$threshold"',"actual":'"$(json_number "$actual")"',"unit":'"$(json_string "$unit")"',"status":'"$(json_string "$status")"'}'
+        separator=','
+    done
+    checks+=']'
+}
 main() {
     local line host user port number=0 rc result=0 i payload
+    local expectations_file=''
+    local -a expected_hosts=() expected_resources=() expected_mounts=() expected_operators=() expected_values=() expected_units=()
     local flows_file='' flows_json='[]' flows_rc=0
     local -a flow_sources=() flow_destinations=() flow_ports=() flow_protocols=() flow_descriptions=()
     local -a hosts=() users=() ports=() options=() csv_fields=()
@@ -330,6 +432,7 @@ main() {
         case "$1" in
             --localhost) [[ -z $mode ]] || { usage >&2; return 2; }; mode=local; shift ;;
             --inventory) [[ -z $mode && $# -ge 2 ]] || { usage >&2; return 2; }; mode=remote; inventory=$2; shift 2 ;;
+            --expectations) [[ $# -ge 2 && -n $2 ]] || { usage >&2; return 2; }; expectations_file=$2; shift 2 ;;
             --flows) [[ $# -ge 2 && -n $2 ]] || { usage >&2; return 2; }; flows_file=$2; shift 2 ;;
             --json) [[ $# -ge 2 && -n $2 ]] || { usage >&2; return 2; }; report=$2; shift 2 ;;
             -h|--help) usage; return 0 ;;
@@ -337,9 +440,11 @@ main() {
         esac
     done
     [[ -n $mode ]] || { usage >&2; return 2; }
+    if [[ -n $expectations_file ]]; then load_expectations || return 2; fi
     if [[ -n $flows_file ]]; then load_flows || return 2; fi
     if [[ $mode == local ]]; then
         validate_flow_sources || return 2
+        validate_expectation_hosts || return 2
     # Ne jamais écraser un fichier existant (inventaire ou code compris).
     if ! (set -o noclobber; : > "$report") 2>/dev/null; then
         printf 'ERREUR Rapport déjà existant ou chemin inaccessible : %s\n' "$report" >&2
@@ -384,12 +489,13 @@ main() {
     done < "$2"
     ((${#hosts[@]})) || { printf 'ERREUR Inventaire vide\n' >&2; return 2; }
     validate_flow_sources || return 2
+    validate_expectation_hosts || return 2
     # Ne jamais écraser un fichier existant (inventaire ou code compris).
     if ! (set -o noclobber; : > "$report") 2>/dev/null; then
         printf 'ERREUR Rapport déjà existant ou chemin inaccessible : %s\n' "$report" >&2
         return 2
     fi
-    payload="$(declare -f json_string json_number filesystems_json collect)"$'\ncollect 3>&1 1>&2\n'
+
     for ((i=0; i<${#hosts[@]}; i++)); do
         printf '\nCible : %s\n' "${hosts[i]}"
         options=(-T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -p "${ports[i]}")
@@ -397,10 +503,13 @@ main() {
         case "${hosts[i]}" in
             localhost|127.0.0.1|::1)
                 printf 'INFO Contrôle local sans SSH (utilisateur et port ignorés)\n'
-                data=$(collect 3>&1 1>&2)
+                data=$(collect "${hosts[i]}" 3>&1 1>&2)
                 rc=$?
                 ;;
             *)
+                payload="$(declare -f json_string json_number filesystems_json check_expectations collect)"$'\n'
+                payload+="$(declare -p expected_hosts expected_resources expected_mounts expected_operators expected_values expected_units)"$'\n'
+                printf -v payload '%scollect %q 3>&1 1>&2\n' "$payload" "${hosts[i]}"
                 data=$(ssh "${options[@]}" "${hosts[i]}" 'bash -s' <<< "$payload")
                 rc=$?
                 ;;
