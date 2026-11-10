@@ -174,16 +174,13 @@ localhost,cpu,,ge,4,count
 localhost,ram,,ge,8192,MiB
 localhost,swap,,eq,0,MiB
 localhost,filesystem_size,/,ge,20480,MiB
-localhost,filesystem_available,/var,ge,2048,MiB
-localhost,filesystem_use,/var,le,90,percent
 ```
 
 - `host` : nom exact dans l'inventaire ; pour `--localhost`, écrire `localhost`.
 - `cpu` : nombre de processeurs logiques en ligne (`count`).
 - `ram` et `swap` : capacité totale, en `MiB` (1 MiB = 1 024 kio).
-- `filesystem_size` : capacité totale du filesystem monté au chemin indiqué.
-- `filesystem_available` : espace disponible sur ce filesystem, en MiB.
-- `filesystem_use` : pourcentage d'utilisation (`percent`).
+- `filesystem_size` : seule la capacité totale du filesystem monté au chemin indiqué est comparée (MiB).
+  L’espace disponible et le pourcentage utilisé restent informatifs en console et dans le JSON.
 - `ge` : supérieur ou égal ; `eq` : égal ; `le` : inférieur ou égal.
 
 Le point de montage est obligatoire pour les ressources filesystem et doit être

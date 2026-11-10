@@ -187,11 +187,11 @@ class JsonReportTests(unittest.TestCase):
         source = SCRIPT.read_text().rsplit('main "$@"', 1)[0]
         command = source + r'''
 expected_hosts=(localhost localhost localhost localhost localhost localhost)
-expected_resources=(cpu ram swap filesystem_size filesystem_available filesystem_use)
+expected_resources=(cpu ram swap filesystem_size filesystem_size filesystem_size)
 expected_mounts=('' '' '' / /missing /)
 expected_operators=(eq ge eq ge ge le)
-expected_values=(4 8 0 1 1 50)
-expected_units=(count MiB MiB MiB MiB percent)
+expected_values=(4 8 0 1 1 2)
+expected_units=(count MiB MiB MiB MiB MiB)
 cpu_count=4; ram_total=8192; swap_total=0
 failed=0; errors=0; disks_ok=1
 disks=$'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/root 2048 1024 1024 50% /'
@@ -233,6 +233,8 @@ printf '{"checks":%s,"failed":%s,"errors":%s}' "$checks" "$failed" "$errors"
 
     def test_invalid_expectations_before_collection(self):
         rows = ['localhost,cpu,,ge,-1,count', 'localhost,ram,,ge,8,GB',
+                'localhost,filesystem_available,/,ge,1,MiB',
+                'localhost,filesystem_use,/,le,90,percent',
                 'localhost,filesystem_size,relative,ge,1,MiB',
                 'unknown,cpu,,ge,1,count', 'localhost,cpu,,wrong,1,count',
                 'localhost,cpu,,ge,1,count\nlocalhost,cpu,,ge,2,count']

@@ -346,7 +346,7 @@ load_expectations() {
         fi
         case "$resource:${csv_fields[5]}" in
             cpu:count|ram:MiB|swap:MiB) [[ -z $mountpoint ]] || return 2 ;;
-            filesystem_size:MiB|filesystem_available:MiB|filesystem_use:percent)
+            filesystem_size:MiB)
                 [[ $mountpoint == /* ]] || { printf 'ERREUR Point de montage ligne %s\n' "$number" >&2; return 2; } ;;
             *) printf 'ERREUR Ressource ou unité ligne %s\n' "$number" >&2; return 2 ;;
         esac
@@ -390,11 +390,7 @@ check_expectations() {
                 while IFS= read -r line; do
                     if ((first)); then first=0; continue; fi
                     if [[ $line =~ $pattern && ${BASH_REMATCH[6]} == "$mountpoint" ]]; then
-                        case "$resource" in
-                            filesystem_size) actual=${BASH_REMATCH[2]} ;;
-                            filesystem_available) actual=${BASH_REMATCH[4]} ;;
-                            filesystem_use) actual=${BASH_REMATCH[5]} ;;
-                        esac
+                        actual=${BASH_REMATCH[2]}
                         break
                     fi
                 done <<< "$disks" ;;

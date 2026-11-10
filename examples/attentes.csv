@@ -3,5 +3,3 @@ localhost,cpu,,ge,2,count
 localhost,ram,,ge,4096,MiB
 localhost,swap,,ge,1024,MiB
 localhost,filesystem_size,/,ge,20480,MiB
-localhost,filesystem_available,/,ge,2048,MiB
-localhost,filesystem_use,/,le,90,percent
