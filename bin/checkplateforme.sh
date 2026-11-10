@@ -1,10 +1,28 @@
 #!/bin/bash
 set -u
 usage() {
-    printf 'Usage : %s --localhost | --inventory FICHIER\n' "$0"
+    printf 'Usage : %s (--localhost | --inventory FICHIER) [--json RAPPORT.json]\n' "$0"
+}
+# Encode une chaîne JSON sans dépendre de Python ou jq.
+json_string() {
+    local LC_ALL=C text=$1 char i code
+    printf '"'
+    for ((i=0; i<${#text}; i++)); do
+        char=${text:i:1}
+        case "$char" in
+            '"') printf '\\"' ;;
+            \\) printf '\\\\' ;;
+            *) printf -v code '%d' "'$char"
+               if (( code < 32 )); then printf '\\u%04x' "$code"; else printf '%s' "$char"; fi ;;
+        esac
+    done
+    printf '"'
+}
+json_number() {
+    if [[ $1 =~ ^[0-9]+$ ]]; then printf '%d' "$((10#$1))"; else printf 'null'; fi
 }
 collect() {
-    local id='' key value errors=0 failed=0
+    local id='' key value errors=0 failed=0 kernel='' disks='' system_state='' failed_units='' rc=0
     printf '\n=== %s ===\n' "${HOSTNAME:-serveur}"
     if [[ -r /etc/os-release ]]; then
         while IFS='=' read -r key value; do
@@ -23,7 +41,8 @@ collect() {
         printf 'ERREUR /etc/os-release illisible\n'; errors=1
     fi
     printf 'INFO Noyau et architecture\n'
-    uname -srmo || errors=1
+    kernel=$(uname -srmo) || errors=1
+    printf '%s\n' "$kernel"
     local cpu_count=0 cpu_model='' field
     if [[ -r /proc/cpuinfo ]]; then
         while IFS=: read -r key value; do
@@ -73,27 +92,75 @@ collect() {
         printf 'ERREUR /proc/meminfo illisible\n'; errors=1
     fi
     printf 'INFO Systèmes de fichiers\n'
-    df -Pk || errors=1
+    disks=$(df -Pk) || errors=1
+    printf '%s\n' "$disks"
     if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
-        if ! systemctl is-system-running; then
+        system_state=$(systemctl is-system-running)
+        rc=$?
+        printf '%s\n' "$system_state"
+        if (( rc != 0 )); then
             printf 'ECART systemd ne signale pas un système running\n'; failed=1
         fi
-        systemctl --failed --no-pager --no-legend || errors=1
+        failed_units=$(systemctl --failed --no-pager --no-legend) || errors=1
+        printf '%s\n' "$failed_units"
     else
         printf 'ERREUR systemd indisponible : contrôle non exécuté\n'; errors=1
     fi
-    (( errors )) && return 2
-    (( failed )) && return 1
-    return 0
+    rc=0
+    (( failed )) && rc=1
+    (( errors )) && rc=2
+    # Le descripteur 3 transporte uniquement les données JSON, y compris via SSH.
+    {
+        printf '{"hostname":'; json_string "${HOSTNAME:-serveur}"
+        printf ',"distribution":'; json_string "$id"
+        printf ',"kernel":'; json_string "$kernel"
+        printf ',"cpu":{"logical_count":'; json_number "$cpu_count"
+        printf ',"model":'; json_string "$cpu_model"
+        printf '},"ram_kib":{"total":'; json_number "$ram_total"
+        printf ',"available":'; json_number "$ram_available"
+        printf ',"used_estimated":'
+        if [[ $ram_total =~ ^[0-9]+$ && $ram_available =~ ^[0-9]+$ ]]; then
+            printf '%s' "$((ram_total - ram_available))"
+        else printf 'null'; fi
+        printf '},"swap_kib":{"total":'; json_number "$swap_total"
+        printf ',"free":'; json_number "$swap_free"
+        printf ',"used":'
+        if [[ $swap_total =~ ^[0-9]+$ && $swap_free =~ ^[0-9]+$ ]]; then
+            printf '%s' "$((swap_total - swap_free))"
+        else printf 'null'; fi
+        printf '},"filesystems_text":'; json_string "$disks"
+        printf ',"systemd":{"state":'; json_string "$system_state"
+        printf ',"failed_units_text":'; json_string "$failed_units"
+        printf '},"exit_code":%s}\n' "$rc"
+    } >&3
+    return "$rc"
 }
 main() {
     local line host user port extra number=0 rc result=0 i payload
-    case "${1:-}" in
-        --help|-h) usage; return 0 ;;
-        --localhost) [[ $# == 1 ]] || { usage >&2; return 2; }; collect; return $? ;;
-        --inventory) [[ $# == 2 ]] || { usage >&2; return 2; } ;;
-        *) usage >&2; return 2 ;;
-    esac
+    local report='rapport.json' mode='' inventory='' data='' entries='' separator=''
+    while (( $# )); do
+        case "$1" in
+            --localhost) [[ -z $mode ]] || { usage >&2; return 2; }; mode=local; shift ;;
+            --inventory) [[ -z $mode && $# -ge 2 ]] || { usage >&2; return 2; }; mode=remote; inventory=$2; shift 2 ;;
+            --json) [[ $# -ge 2 && -n $2 ]] || { usage >&2; return 2; }; report=$2; shift 2 ;;
+            -h|--help) usage; return 0 ;;
+            *) usage >&2; return 2 ;;
+        esac
+    done
+    [[ -n $mode ]] || { usage >&2; return 2; }
+    if [[ $mode == local ]]; then
+    # Ne jamais écraser un fichier existant (inventaire ou code compris).
+    if ! (set -o noclobber; : > "$report") 2>/dev/null; then
+        printf 'ERREUR Rapport déjà existant ou chemin inaccessible : %s\n' "$report" >&2
+        return 2
+    fi
+        data=$(collect 3>&1 1>&2)
+        rc=$?
+        if ! printf '{"servers":[{"target":"localhost","exit_code":%s,"data":%s}],"exit_code":%s}\n' "$rc" "${data:-null}" "$rc" > "$report"; then return 2; fi
+        printf 'Rapport JSON : %s\n' "$report"
+        return "$rc"
+    fi
+    set -- --inventory "$inventory"
     [[ -f $2 && -r $2 ]] || { printf 'ERREUR Inventaire illisible\n' >&2; return 2; }
     command -v ssh >/dev/null || { printf 'ERREUR Client SSH absent\n' >&2; return 2; }
     local -a hosts=() users=() ports=() options=()
@@ -111,16 +178,28 @@ main() {
         hosts+=("$host"); users+=("$user"); ports+=("$port")
     done < "$2"
     ((${#hosts[@]})) || { printf 'ERREUR Inventaire vide\n' >&2; return 2; }
-    payload="$(declare -f collect)"$'\ncollect\n'
+    # Ne jamais écraser un fichier existant (inventaire ou code compris).
+    if ! (set -o noclobber; : > "$report") 2>/dev/null; then
+        printf 'ERREUR Rapport déjà existant ou chemin inaccessible : %s\n' "$report" >&2
+        return 2
+    fi
+    payload="$(declare -f json_string json_number collect)"$'\ncollect 3>&1 1>&2\n'
     for ((i=0; i<${#hosts[@]}; i++)); do
         printf '\nCible : %s\n' "${hosts[i]}"
         options=(-T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -p "${ports[i]}")
         [[ -z ${users[i]} ]] || options+=(-l "${users[i]}")
-        ssh "${options[@]}" "${hosts[i]}" 'bash -s' <<< "$payload"
+        data=$(ssh "${options[@]}" "${hosts[i]}" 'bash -s' <<< "$payload")
         rc=$?
         printf 'BILAN %s : code %s\n' "${hosts[i]}" "$rc"
+        # Une rupture SSH peut laisser une réponse partielle : ne pas la conserver.
+        case "$rc" in 0|1|2) ;; *) data='' ;; esac
+        entries+="$separator"'{"target":'"$(json_string "${hosts[i]}")"',"exit_code":'"$rc"',"data":'"${data:-null}"'}'
+        separator=','
+
         case "$rc" in 0) ;; 1) ((result < 1)) && result=1 ;; *) result=2 ;; esac
     done
+    if ! printf '{"servers":[%s],"exit_code":%s}\n' "$entries" "$result" > "$report"; then return 2; fi
+    printf 'Rapport JSON : %s\n' "$report"
     return "$result"
 }
 main "$@"

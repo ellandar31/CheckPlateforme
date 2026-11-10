@@ -61,3 +61,24 @@ bash bin/checkplateforme.sh --help
 
 Valider les contrôles complets sur une VM RHEL démarrée avec systemd.
 Un conteneur Linux ne remplace pas ce test.
+
+## Rapport JSON
+
+Chaque exécution produit `rapport.json` dans le répertoire courant, en plus de
+l'affichage console. Choisir un autre fichier avec `--json` :
+
+```bash
+bash bin/checkplateforme.sh --localhost --json controle-local.json
+bash bin/checkplateforme.sh --inventory examples/serveurs.txt --json controle-parc.json
+```
+
+Un fichier existant est refusé pour éviter tout écrasement ; utiliser un nouveau
+nom à chaque exécution. Aucun paquet supplémentaire (`jq`, Python…) n'est requis.
+Les détails console de la collecte passent sur stderr ; ils restent visibles.
+
+Le rapport contient `servers` (une entrée par cible) et un `exit_code` global.
+Chaque entrée contient `target`, `exit_code` et `data` : distribution, noyau,
+CPU, RAM et swap en kio, sortie texte des systèmes de fichiers et état systemd.
+Les valeurs mémoire inconnues valent `null`. En cas d'échec SSH, `data` vaut
+`null` et le code SSH est conservé (généralement 255). Les diagnostics restent
+dans la console. Les codes de sortie du programme restent inchangés.
