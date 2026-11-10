@@ -84,7 +84,11 @@ Les détails console de la collecte passent sur stderr ; ils restent visibles.
 
 Le rapport contient `servers` (une entrée par cible) et un `exit_code` global.
 Chaque entrée contient `target`, `exit_code` et `data` : distribution, noyau,
-CPU, RAM et swap en kio, sortie texte des systèmes de fichiers et état systemd.
+CPU, RAM et swap en kio, tableau `filesystems` et état systemd.
+Chaque entrée de `filesystems` contient `device`, `mountpoint`, `size_kib`,
+`used_kib`, `available_kib` et `use_percent` (nombre de 0 à 100 ou plus selon df).
+Le tableau remplace l'ancien champ `filesystems_text`. L'affichage console
+reste identique. Les tailles sont exprimées en blocs de 1 kio (1 024 octets).
 Les valeurs mémoire inconnues valent `null`. En cas d'échec SSH, `data` vaut
 `null` et le code SSH est conservé (généralement 255). Les diagnostics restent
 dans la console. Les codes de sortie du programme restent inchangés.

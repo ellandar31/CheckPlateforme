@@ -21,8 +21,37 @@ json_string() {
 json_number() {
     if [[ $1 =~ ^[0-9]+$ ]]; then printf '%d' "$((10#$1))"; else printf 'null'; fi
 }
+# Convertit la sortie POSIX de df (blocs de 1 kio) en objets JSON.
+filesystems_json() {
+    local line first=1 separator='' invalid=0
+    local pattern='^(.+[^[:space:]])[[:space:]]+([0-9]+)[[:space:]]+([0-9]+)[[:space:]]+([0-9]+)[[:space:]]+([0-9]+)%[[:space:]]+(.+)$'
+    printf '['
+    while IFS= read -r line; do
+        if (( first )); then first=0; continue; fi
+        [[ -n $line ]] || continue
+        if [[ $line =~ $pattern ]]; then
+            # Sauvegarder les captures avant tout appel modifiant BASH_REMATCH.
+            local device=${BASH_REMATCH[1]} size=${BASH_REMATCH[2]}
+            local used=${BASH_REMATCH[3]} available=${BASH_REMATCH[4]}
+            local percent=${BASH_REMATCH[5]} mountpoint=${BASH_REMATCH[6]}
+            printf '%s{"device":' "$separator"; json_string "$device"
+            printf ',"mountpoint":'; json_string "$mountpoint"
+            printf ',"size_kib":'; json_number "$size"
+            printf ',"used_kib":'; json_number "$used"
+            printf ',"available_kib":'; json_number "$available"
+            printf ',"use_percent":'; json_number "$percent"
+            printf '}'
+            separator=','
+        else
+            printf 'ERREUR Ligne filesystem non interprétable : %s\n' "$line" >&2
+            invalid=1
+        fi
+    done <<< "$1"
+    printf ']'
+    return "$invalid"
+}
 collect() {
-    local id='' key value errors=0 failed=0 kernel='' disks='' system_state='' failed_units='' rc=0
+    local id='' key value errors=0 failed=0 kernel='' disks='' filesystems='[]' system_state='' failed_units='' rc=0
     printf '\n=== %s ===\n' "${HOSTNAME:-serveur}"
     if [[ -r /etc/os-release ]]; then
         while IFS='=' read -r key value; do
@@ -92,8 +121,9 @@ collect() {
         printf 'ERREUR /proc/meminfo illisible\n'; errors=1
     fi
     printf 'INFO Systèmes de fichiers\n'
-    disks=$(df -Pk) || errors=1
+    disks=$(LC_ALL=C df -Pk) || errors=1
     printf '%s\n' "$disks"
+    filesystems=$(filesystems_json "$disks") || errors=1
     if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
         system_state=$(systemctl is-system-running)
         rc=$?
@@ -128,7 +158,7 @@ collect() {
         if [[ $swap_total =~ ^[0-9]+$ && $swap_free =~ ^[0-9]+$ ]]; then
             printf '%s' "$((swap_total - swap_free))"
         else printf 'null'; fi
-        printf '},"filesystems_text":'; json_string "$disks"
+        printf '},"filesystems":%s' "$filesystems"
         printf ',"systemd":{"state":'; json_string "$system_state"
         printf ',"failed_units_text":'; json_string "$failed_units"
         printf '},"exit_code":%s}\n' "$rc"
@@ -231,7 +261,7 @@ main() {
         printf 'ERREUR Rapport déjà existant ou chemin inaccessible : %s\n' "$report" >&2
         return 2
     fi
-    payload="$(declare -f json_string json_number collect)"$'\ncollect 3>&1 1>&2\n'
+    payload="$(declare -f json_string json_number filesystems_json collect)"$'\ncollect 3>&1 1>&2\n'
     for ((i=0; i<${#hosts[@]}; i++)); do
         printf '\nCible : %s\n' "${hosts[i]}"
         options=(-T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -p "${ports[i]}")

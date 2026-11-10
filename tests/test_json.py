@@ -17,6 +17,26 @@ class JsonReportTests(unittest.TestCase):
                                 capture_output=True, text=True, check=True)
         self.assertEqual(json.loads(result.stdout), value)
 
+    def test_filesystems_json(self):
+        source = SCRIPT.read_text().rsplit('main "$@"', 1)[0]
+        table = ('Filesystem 1024-blocks Used Available Capacity Mounted on\n'
+                 '/dev/mapper/root 10000 4000 6000 40% /\n'
+                 'tmpfs 2000 0 2000 0% /run\n'
+                 '/dev/disk with spaces 3000 1000 2000 34% /mnt/data "quoted"\n')
+        result = subprocess.run(['bash', '-c', source + '\nfilesystems_json "$1"', 'test', table],
+                                capture_output=True, text=True, check=True)
+        data = json.loads(result.stdout)
+        self.assertEqual(len(data), 3)
+        self.assertEqual(data[0], dict(device='/dev/mapper/root', mountpoint='/',
+                                      size_kib=10000, used_kib=4000,
+                                      available_kib=6000, use_percent=40))
+        self.assertEqual(data[2]['device'], '/dev/disk with spaces')
+        self.assertEqual(data[2]['mountpoint'], '/mnt/data "quoted"')
+        result = subprocess.run(['bash', '-c', source + '\nfilesystems_json "$1"',
+                                 'test', 'header\ninvalid row'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(json.loads(result.stdout), [])
+
     def test_local_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as directory:
             report = Path(directory) / 'local.json'
@@ -27,6 +47,11 @@ class JsonReportTests(unittest.TestCase):
             self.assertIn('INFO CPU', result.stderr)
             metrics = data['servers'][0]['data']
             self.assertGreater(metrics['cpu']['logical_count'], 0)
+            self.assertNotIn('filesystems_text', metrics)
+            self.assertTrue(metrics['filesystems'])
+            for filesystem in metrics['filesystems']:
+                self.assertIsInstance(filesystem['size_kib'], int)
+                self.assertTrue(filesystem['mountpoint'])
             self.assertEqual(metrics['swap_kib']['used'],
                              metrics['swap_kib']['total'] - metrics['swap_kib']['free'])
             original = report.read_bytes()
