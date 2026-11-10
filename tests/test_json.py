@@ -69,7 +69,7 @@ class JsonReportTests(unittest.TestCase):
             ssh.write_text('#!/bin/bash\ntouch "' + str(marker) + '"\nexit 255\n')
             ssh.chmod(0o755)
             inventory = root / 'hosts'
-            inventory.write_text('host,user,port\nlocalhost,,\n127.0.0.1,,\n::1,,\n')
+            inventory.write_text('host;user;port\nlocalhost;;\n127.0.0.1;;\n::1;;\n')
             report = root / 'report.json'
             subprocess.run(['bash', str(SCRIPT), '--inventory', str(inventory),
                             '--json', str(report)], capture_output=True,
@@ -84,15 +84,18 @@ class JsonReportTests(unittest.TestCase):
     def test_csv_formats_and_invalid_rows(self):
         source = SCRIPT.read_text().rsplit('main "$@"', 1)[0]
         cases = [
-            ('server,,', ['server', '', '']),
-            ('server,audit,2222', ['server', 'audit', '2222']),
-            (' "server" , "audit" , "22" ', ['server', 'audit', '22']),
-            ('"a""b",,', ['a"b', '', '']),
+            ('server;;', ['server', '', '']),
+            ('server;audit;2222', ['server', 'audit', '2222']),
+            (' "server" ; "audit" ; "22" ', ['server', 'audit', '22']),
+            ('"a""b";;', ['a"b', '', '']),
             ('server audit 22', None),
-            ('server,audit,22,', None),
-            ('server,audit', None),
-            ('"server,audit,22', None),
-            ('"server"x,,', None),
+            ('server,audit,22', None),
+            ('server\taudit\t22', None),
+            ('server;"audit, team";22', ['server', 'audit, team', '22']),
+            ('server;audit;22;', None),
+            ('server;audit', None),
+            ('"server;audit;22', None),
+            ('"server"x;;', None),
         ]
         for line, expected in cases:
             with self.subTest(line=line):
@@ -108,7 +111,7 @@ class JsonReportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             inventory = root / 'hosts.csv'
-            inventory.write_bytes(b'\xef\xbb\xbfhost,user,port\r\n# commentaire\r\n\r\n"localhost",,2222')
+            inventory.write_bytes(b'\xef\xbb\xbfhost;user;port\r\n# commentaire\r\n\r\n"localhost";;2222')
             report = root / 'report.json'
             subprocess.run(['bash', str(SCRIPT), '--inventory', str(inventory),
                             '--json', str(report)], capture_output=True)
@@ -143,10 +146,10 @@ class JsonReportTests(unittest.TestCase):
             ssh.write_text('#!/bin/bash\nbash -s\n')
             ssh.chmod(0o755)
             inventory = root / 'hosts.csv'
-            inventory.write_text('host,user,port\nsource01,audit,2222\n')
+            inventory.write_text('host;user;port\nsource01;audit;2222\n')
             matrix = root / 'flows.csv'
-            matrix.write_text('source,destination,port,protocole,description\n'
-                              'source01,127.0.0.1,53,udp,"DNS, test"\n')
+            matrix.write_text('source;destination;port;protocole;description\n'
+                              'source01;127.0.0.1;53;udp;"DNS; test"\n')
             report = root / 'report.json'
             result = subprocess.run(['bash', str(SCRIPT), '--inventory', str(inventory),
                                      '--flows', str(matrix), '--json', str(report)],
@@ -155,16 +158,16 @@ class JsonReportTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             flows = json.loads(report.read_text())['flows']
             self.assertEqual(flows[0]['source'], 'source01')
-            self.assertEqual(flows[0]['description'], 'DNS, test')
+            self.assertEqual(flows[0]['description'], 'DNS; test')
             self.assertEqual(flows[0]['result']['status'], 'indeterminate')
 
     def test_invalid_matrix_before_collection(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for row in ['localhost,host,0,tcp,test',
-                        'localhost,host,22,ssh,test',
-                        'unknown-source,host,22,tcp,test',
-                        'localhost,$(touch bad),22,tcp,test']:
+            for row in ['localhost;host;0;tcp;test',
+                        'localhost;host;22;ssh;test',
+                        'unknown-source;host;22;tcp;test',
+                        'localhost;$(touch bad);22;tcp;test']:
                 matrix = root / 'flows.csv'
                 matrix.write_text(row)
                 report = root / 'report.json'
@@ -217,10 +220,10 @@ printf '{"checks":%s,"failed":%s,"errors":%s}' "$checks" "$failed" "$errors"
             ssh.write_text('#!/bin/bash\nbash -s\n')
             ssh.chmod(0o755)
             inventory = root / 'hosts.csv'
-            inventory.write_text('host,user,port\nremote01,audit,22\n')
+            inventory.write_text('host;user;port\nremote01;audit;22\n')
             expectations = root / 'expected.csv'
-            expectations.write_text('host,resource,mountpoint,operator,value,unit\n'
-                                    'remote01,cpu,,ge,999999,count\n')
+            expectations.write_text('host;resource;mountpoint;operator;value;unit\n'
+                                    'remote01;cpu;;ge;999999;count\n')
             report = root / 'report.json'
             subprocess.run(['bash', str(SCRIPT), '--inventory', str(inventory),
                             '--expectations', str(expectations), '--json', str(report)],
@@ -232,12 +235,12 @@ printf '{"checks":%s,"failed":%s,"errors":%s}' "$checks" "$failed" "$errors"
             self.assertEqual(checks[0]['expected'], 999999)
 
     def test_invalid_expectations_before_collection(self):
-        rows = ['localhost,cpu,,ge,-1,count', 'localhost,ram,,ge,8,GB',
-                'localhost,filesystem_available,/,ge,1,MiB',
-                'localhost,filesystem_use,/,le,90,percent',
-                'localhost,filesystem_size,relative,ge,1,MiB',
-                'unknown,cpu,,ge,1,count', 'localhost,cpu,,wrong,1,count',
-                'localhost,cpu,,ge,1,count\nlocalhost,cpu,,ge,2,count']
+        rows = ['localhost;cpu;;ge;-1;count', 'localhost;ram;;ge;8;GB',
+                'localhost;filesystem_available;/;ge;1;MiB',
+                'localhost;filesystem_use;/;le;90;percent',
+                'localhost;filesystem_size;relative;ge;1;MiB',
+                'unknown;cpu;;ge;1;count', 'localhost;cpu;;wrong;1;count',
+                'localhost;cpu;;ge;1;count\nlocalhost;cpu;;ge;2;count']
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for row in rows:
@@ -258,7 +261,7 @@ printf '{"checks":%s,"failed":%s,"errors":%s}' "$checks" "$failed" "$errors"
             ssh.write_text('#!/bin/bash\ncase "$*" in *badhost*) printf partial; exit 255 ;; esac\nbash -s\n')
             ssh.chmod(0o755)
             inventory = root / 'hosts'
-            inventory.write_text('host,user,port\nbadhost,,\ngoodhost,,\n')
+            inventory.write_text('host;user;port\nbadhost;;\ngoodhost;;\n')
             report = root / 'remote.json'
             result = subprocess.run(['bash', str(SCRIPT), '--inventory', str(inventory),
                                      '--json', str(report)], capture_output=True, text=True,

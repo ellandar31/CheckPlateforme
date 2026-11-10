@@ -168,7 +168,7 @@ collect() {
     } >&3
     return "$rc"
 }
-# CSV à nombre de colonnes attendu, champs nus ou entre guillemets ; une ligne par cible.
+# CSV séparé par des points-virgules, à nombre de colonnes attendu, champs nus ou entre guillemets ; une ligne par cible.
 parse_csv_line() {
     csv_fields=()
     local text=$1 field='' state=start char next i
@@ -179,13 +179,13 @@ parse_csv_line() {
                 case "$char" in
                     ' '|$'\t') ;;
                     '"') state=quoted ;;
-                    ',') csv_fields+=(""); field='' ;;
+                    ';') csv_fields+=(""); field='' ;;
                     *) field=$char; state=bare ;;
                 esac ;;
             bare)
                 case "$char" in
                     '"') return 1 ;;
-                    ',') field=${field%"${field##*[![:space:]]}"}; csv_fields+=("$field"); field=''; state=start ;;
+                    ';') field=${field%"${field##*[![:space:]]}"}; csv_fields+=("$field"); field=''; state=start ;;
                     *) field+=$char ;;
                 esac ;;
             quoted)
@@ -196,7 +196,7 @@ parse_csv_line() {
             closed)
                 case "$char" in
                     ' '|$'\t') ;;
-                    ',') csv_fields+=("$field"); field=''; state=start ;;
+                    ';') csv_fields+=("$field"); field=''; state=start ;;
                     *) return 1 ;;
                 esac ;;
         esac
@@ -466,7 +466,7 @@ main() {
         (( number != 1 )) || line=${line#$'\xef\xbb\xbf'}
         [[ $line =~ ^[[:space:]]*(#|$) ]] && continue
         if ! parse_csv_line "$line"; then
-            printf 'ERREUR CSV ligne %s : trois colonnes attendues (host,user,port)\n' "$number" >&2
+            printf 'ERREUR CSV ligne %s : trois colonnes attendues (host;user;port)\n' "$number" >&2
             return 2
         fi
         host=${csv_fields[0]}; user=${csv_fields[1]}; port=${csv_fields[2]}

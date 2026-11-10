@@ -18,21 +18,21 @@ Aucun mot de passe interactif n'est demandé. La configuration SSH existante est
 
 ## Inventaire
 
-Fichier CSV séparé par des **virgules**, avec trois colonnes `host,user,port`.
+Fichier CSV séparé par des **points-virgules (`;`)**, avec trois colonnes `host;user;port`.
 L'en-tête est facultatif. Une cible par ligne, avec trois champs obligatoires :
 `user` et `port` peuvent être vides (compte SSH par défaut et port 22).
 Les champs peuvent être entre guillemets doubles ; les fins de ligne Windows
 (CRLF) et le BOM UTF-8 sont acceptés. Pas de champs sur plusieurs lignes.
 Les lignes vides et les lignes commençant par `#` sont ignorées.
-Les anciens fichiers séparés par des espaces ou tabulations doivent être convertis.
+Les anciens fichiers séparés par des virgules, espaces ou tabulations doivent être convertis.
 Aucun secret ni commande shell dans l'inventaire.
 
 ```csv
-host,user,port
-localhost,,
-serveur01,,
-192.0.2.10,audit,22
-serveur03,audit,2222
+host;user;port
+localhost;;
+serveur01;;
+192.0.2.10;audit;22
+serveur03;audit;2222
 ```
 
 Le fichier entier est validé avant connexion. Les cibles sont traitées
@@ -116,13 +116,13 @@ bash bin/checkplateforme.sh --localhost --flows flux-local.csv --json local-flux
 bash bin/checkplateforme.sh --inventory examples/serveurs.csv --flows examples/flux.csv --json parc-flux.json
 ```
 
-La matrice CSV comporte cinq colonnes, avec en-tête facultatif :
+La matrice CSV utilise le séparateur `;` et comporte cinq colonnes, avec en-tête facultatif :
 
 ```csv
-source,destination,port,protocole,description
-localhost,192.0.2.10,22,tcp,SSH et SFTP
-serveur01,192.0.2.20,1521,tcp,Oracle SQLPlus
-serveur01,192.0.2.53,53,udp,DNS
+source;destination;port;protocole;description
+localhost;192.0.2.10;22;tcp;SSH et SFTP
+serveur01;192.0.2.20;1521;tcp;Oracle SQLPlus
+serveur01;192.0.2.53;53;udp;DNS
 ```
 
 Remplacer les noms et adresses d'exemple. Les sources distantes doivent être
@@ -166,14 +166,14 @@ bash bin/checkplateforme.sh --localhost --expectations examples/attentes.csv --j
 bash bin/checkplateforme.sh --inventory exemples-parc.csv --expectations attentes-parc.csv --flows flux.csv --json parc.json
 ```
 
-CSV de six colonnes, avec en-tête facultatif :
+CSV avec séparateur `;`, de six colonnes, avec en-tête facultatif :
 
 ```csv
-host,resource,mountpoint,operator,value,unit
-localhost,cpu,,ge,4,count
-localhost,ram,,ge,8192,MiB
-localhost,swap,,eq,0,MiB
-localhost,filesystem_size,/,ge,20480,MiB
+host;resource;mountpoint;operator;value;unit
+localhost;cpu;;ge;4;count
+localhost;ram;;ge;8192;MiB
+localhost;swap;;eq;0;MiB
+localhost;filesystem_size;/;ge;20480;MiB
 ```
 
 - `host` : nom exact dans l'inventaire ; pour `--localhost`, écrire `localhost`.
