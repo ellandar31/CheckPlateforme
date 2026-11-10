@@ -1,3 +1,0 @@
-# Hôte                  Utilisateur   Port SSH
-rhel01.example.local    audit         22
-rhel02.example.local    audit         22

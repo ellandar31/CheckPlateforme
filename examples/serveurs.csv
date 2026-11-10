@@ -1,0 +1,4 @@
+host,user,port
+localhost,,
+rhel01.example.local,audit,22
+rhel02.example.local,audit,22

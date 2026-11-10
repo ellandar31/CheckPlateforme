@@ -5,7 +5,7 @@ sans interface graphique, agent distant ni installation automatique de paquets.
 
 ```bash
 bash bin/checkplateforme.sh --localhost
-bash bin/checkplateforme.sh --inventory examples/serveurs.txt
+bash bin/checkplateforme.sh --inventory examples/serveurs.csv
 ```
 
 Prérequis : Bash, uname, df et systemd sur les serveurs, normalement disponibles
@@ -18,15 +18,21 @@ Aucun mot de passe interactif n'est demandé. La configuration SSH existante est
 
 ## Inventaire
 
-Une cible par ligne : `hôte [utilisateur [port]]`, séparés par des espaces ou
-tabulations. Utilisateur facultatif, port 22 par défaut. Pour préciser un port,
-fournir aussi un utilisateur. Lignes vides et commentaires # acceptés.
+Fichier CSV séparé par des **virgules**, avec trois colonnes `host,user,port`.
+L'en-tête est facultatif. Une cible par ligne, avec trois champs obligatoires :
+`user` et `port` peuvent être vides (compte SSH par défaut et port 22).
+Les champs peuvent être entre guillemets doubles ; les fins de ligne Windows
+(CRLF) et le BOM UTF-8 sont acceptés. Pas de champs sur plusieurs lignes.
+Les lignes vides et les lignes commençant par `#` sont ignorées.
+Les anciens fichiers séparés par des espaces ou tabulations doivent être convertis.
 Aucun secret ni commande shell dans l'inventaire.
 
-```text
-serveur01
-192.0.2.10 audit 22
-serveur03 audit 2222
+```csv
+host,user,port
+localhost,,
+serveur01,,
+192.0.2.10,audit,22
+serveur03,audit,2222
 ```
 
 Le fichier entier est validé avant connexion. Les cibles sont traitées
@@ -69,7 +75,7 @@ l'affichage console. Choisir un autre fichier avec `--json` :
 
 ```bash
 bash bin/checkplateforme.sh --localhost --json controle-local.json
-bash bin/checkplateforme.sh --inventory examples/serveurs.txt --json controle-parc.json
+bash bin/checkplateforme.sh --inventory examples/serveurs.csv --json controle-parc.json
 ```
 
 Un fichier existant est refusé pour éviter tout écrasement ; utiliser un nouveau

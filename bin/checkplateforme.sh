@@ -135,8 +135,46 @@ collect() {
     } >&3
     return "$rc"
 }
+# CSV à trois colonnes, champs nus ou entre guillemets ; une ligne par cible.
+parse_csv_line() {
+    csv_fields=()
+    local text=$1 field='' state=start char next i
+    for ((i=0; i<${#text}; i++)); do
+        char=${text:i:1}
+        case "$state" in
+            start)
+                case "$char" in
+                    ' '|$'\t') ;;
+                    '"') state=quoted ;;
+                    ',') csv_fields+=(""); field='' ;;
+                    *) field=$char; state=bare ;;
+                esac ;;
+            bare)
+                case "$char" in
+                    '"') return 1 ;;
+                    ',') field=${field%"${field##*[![:space:]]}"}; csv_fields+=("$field"); field=''; state=start ;;
+                    *) field+=$char ;;
+                esac ;;
+            quoted)
+                if [[ $char == '"' ]]; then
+                    next=${text:i+1:1}
+                    if [[ $next == '"' ]]; then field+='"'; ((i+=1)); else state=closed; fi
+                else field+=$char; fi ;;
+            closed)
+                case "$char" in
+                    ' '|$'\t') ;;
+                    ',') csv_fields+=("$field"); field=''; state=start ;;
+                    *) return 1 ;;
+                esac ;;
+        esac
+    done
+    [[ $state != quoted ]] || return 1
+    [[ $state != bare ]] || field=${field%"${field##*[![:space:]]}"}
+    csv_fields+=("$field")
+    [[ ${#csv_fields[@]} == 3 ]]
+}
 main() {
-    local line host user port extra number=0 rc result=0 i payload
+    local line host user port number=0 rc result=0 i payload
     local report='rapport.json' mode='' inventory='' data='' entries='' separator=''
     while (( $# )); do
         case "$1" in
@@ -162,13 +200,24 @@ main() {
     fi
     set -- --inventory "$inventory"
     [[ -f $2 && -r $2 ]] || { printf 'ERREUR Inventaire illisible\n' >&2; return 2; }
-    local -a hosts=() users=() ports=() options=()
+    local -a hosts=() users=() ports=() options=() csv_fields=()
+    local first_record=1
     while IFS= read -r line || [[ -n $line ]]; do
-        ((number+=1)); line=${line%%#*}
-        read -r host user port extra <<< "$line"
-        [[ -n $host ]] || continue
+        ((number+=1))
+        line=${line%$'\r'}
+        (( number != 1 )) || line=${line#$'\xef\xbb\xbf'}
+        [[ $line =~ ^[[:space:]]*(#|$) ]] && continue
+        if ! parse_csv_line "$line"; then
+            printf 'ERREUR CSV ligne %s : trois colonnes attendues (host,user,port)\n' "$number" >&2
+            return 2
+        fi
+        host=${csv_fields[0]}; user=${csv_fields[1]}; port=${csv_fields[2]}
+        if (( first_record )) && [[ $host == host && $user == user && $port == port ]]; then
+            first_record=0; continue
+        fi
+        first_record=0
         port=${port:-22}
-        if [[ ( $host != ::1 && ! $host =~ ^[a-zA-Z0-9][a-zA-Z0-9._:-]*$ ) || ( -n $user && ! $user =~ ^[a-zA-Z_][a-zA-Z0-9_.-]*$ ) || ! $port =~ ^[0-9]{1,5}$ || -n $extra ]]; then
+        if [[ ( $host != ::1 && ! $host =~ ^[a-zA-Z0-9][a-zA-Z0-9._:-]*$ ) || ( -n $user && ! $user =~ ^[a-zA-Z_][a-zA-Z0-9_.-]*$ ) || ! $port =~ ^[0-9]{1,5}$ ]]; then
             printf 'ERREUR Inventaire ligne %s\n' "$number" >&2; return 2
         fi
         if ((10#$port < 1 || 10#$port > 65535)); then

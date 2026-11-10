@@ -41,7 +41,7 @@ class JsonReportTests(unittest.TestCase):
             ssh.write_text('#!/bin/bash\ntouch "' + str(marker) + '"\nexit 255\n')
             ssh.chmod(0o755)
             inventory = root / 'hosts'
-            inventory.write_text('localhost\n127.0.0.1\n::1\n')
+            inventory.write_text('host,user,port\nlocalhost,,\n127.0.0.1,,\n::1,,\n')
             report = root / 'report.json'
             subprocess.run(['bash', str(SCRIPT), '--inventory', str(inventory),
                             '--json', str(report)], capture_output=True,
@@ -53,6 +53,41 @@ class JsonReportTests(unittest.TestCase):
                 self.assertIn('cpu', server['data'])
                 self.assertNotEqual(server['exit_code'], 255)
 
+    def test_csv_formats_and_invalid_rows(self):
+        source = SCRIPT.read_text().rsplit('main "$@"', 1)[0]
+        cases = [
+            ('server,,', ['server', '', '']),
+            ('server,audit,2222', ['server', 'audit', '2222']),
+            (' "server" , "audit" , "22" ', ['server', 'audit', '22']),
+            ('"a""b",,', ['a"b', '', '']),
+            ('server audit 22', None),
+            ('server,audit,22,', None),
+            ('server,audit', None),
+            ('"server,audit,22', None),
+            ('"server"x,,', None),
+        ]
+        for line, expected in cases:
+            with self.subTest(line=line):
+                command = source + '\nparse_csv_line "$1" || exit 2; printf "%s\\0" "${csv_fields[@]}"'
+                result = subprocess.run(['bash', '-c', command, 'test', line], capture_output=True)
+                if expected is None:
+                    self.assertEqual(result.returncode, 2)
+                else:
+                    self.assertEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout.decode().split('\0')[:-1], expected)
+
+    def test_csv_crlf_bom_and_empty_user(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inventory = root / 'hosts.csv'
+            inventory.write_bytes(b'\xef\xbb\xbfhost,user,port\r\n# commentaire\r\n\r\n"localhost",,2222')
+            report = root / 'report.json'
+            subprocess.run(['bash', str(SCRIPT), '--inventory', str(inventory),
+                            '--json', str(report)], capture_output=True)
+            data = json.loads(report.read_text())
+            self.assertEqual(data['servers'][0]['target'], 'localhost')
+            self.assertIn('cpu', data['servers'][0]['data'])
+
     def test_remote_transport_and_continuation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -60,7 +95,7 @@ class JsonReportTests(unittest.TestCase):
             ssh.write_text('#!/bin/bash\ncase "$*" in *badhost*) printf partial; exit 255 ;; esac\nbash -s\n')
             ssh.chmod(0o755)
             inventory = root / 'hosts'
-            inventory.write_text('badhost\ngoodhost\n')
+            inventory.write_text('host,user,port\nbadhost,,\ngoodhost,,\n')
             report = root / 'remote.json'
             result = subprocess.run(['bash', str(SCRIPT), '--inventory', str(inventory),
                                      '--json', str(report)], capture_output=True, text=True,
