@@ -82,3 +82,16 @@ CPU, RAM et swap en kio, sortie texte des systèmes de fichiers et état systemd
 Les valeurs mémoire inconnues valent `null`. En cas d'échec SSH, `data` vaut
 `null` et le code SSH est conservé (généralement 255). Les diagnostics restent
 dans la console. Les codes de sortie du programme restent inchangés.
+
+## Cibles locales et erreurs SSH
+
+Dans l'inventaire, `localhost`, `127.0.0.1` et `::1` exécutent les contrôles
+localement, sans SSH, avec le compte courant. Les champs utilisateur et port
+sont alors ignorés. Les autres cibles utilisent SSH.
+
+Les noms `rhel01.example.local` et `rhel02.example.local` du fichier exemple
+sont à remplacer par les noms DNS résolvables ou adresses IP de vos serveurs.
+Une erreur « Could not resolve hostname » indique un problème de nom ou de DNS.
+Pour une cible distante dont la clé SSH est inconnue, vérifier son empreinte
+auprès de l'administrateur, puis enregistrer la clé avec une première connexion
+SSH interactive. Le contrôle strict des clés reste activé.

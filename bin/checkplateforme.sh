@@ -162,14 +162,13 @@ main() {
     fi
     set -- --inventory "$inventory"
     [[ -f $2 && -r $2 ]] || { printf 'ERREUR Inventaire illisible\n' >&2; return 2; }
-    command -v ssh >/dev/null || { printf 'ERREUR Client SSH absent\n' >&2; return 2; }
     local -a hosts=() users=() ports=() options=()
     while IFS= read -r line || [[ -n $line ]]; do
         ((number+=1)); line=${line%%#*}
         read -r host user port extra <<< "$line"
         [[ -n $host ]] || continue
         port=${port:-22}
-        if [[ ! $host =~ ^[a-zA-Z0-9][a-zA-Z0-9._:-]*$ || ( -n $user && ! $user =~ ^[a-zA-Z_][a-zA-Z0-9_.-]*$ ) || ! $port =~ ^[0-9]{1,5}$ || -n $extra ]]; then
+        if [[ ( $host != ::1 && ! $host =~ ^[a-zA-Z0-9][a-zA-Z0-9._:-]*$ ) || ( -n $user && ! $user =~ ^[a-zA-Z_][a-zA-Z0-9_.-]*$ ) || ! $port =~ ^[0-9]{1,5}$ || -n $extra ]]; then
             printf 'ERREUR Inventaire ligne %s\n' "$number" >&2; return 2
         fi
         if ((10#$port < 1 || 10#$port > 65535)); then
@@ -188,8 +187,17 @@ main() {
         printf '\nCible : %s\n' "${hosts[i]}"
         options=(-T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -p "${ports[i]}")
         [[ -z ${users[i]} ]] || options+=(-l "${users[i]}")
-        data=$(ssh "${options[@]}" "${hosts[i]}" 'bash -s' <<< "$payload")
-        rc=$?
+        case "${hosts[i]}" in
+            localhost|127.0.0.1|::1)
+                printf 'INFO Contrôle local sans SSH (utilisateur et port ignorés)\n'
+                data=$(collect 3>&1 1>&2)
+                rc=$?
+                ;;
+            *)
+                data=$(ssh "${options[@]}" "${hosts[i]}" 'bash -s' <<< "$payload")
+                rc=$?
+                ;;
+        esac
         printf 'BILAN %s : code %s\n' "${hosts[i]}" "$rc"
         # Une rupture SSH peut laisser une réponse partielle : ne pas la conserver.
         case "$rc" in 0|1|2) ;; *) data='' ;; esac

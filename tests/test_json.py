@@ -33,6 +33,26 @@ class JsonReportTests(unittest.TestCase):
             self.assertEqual(subprocess.run(command, capture_output=True).returncode, 2)
             self.assertEqual(report.read_bytes(), original)
 
+    def test_inventory_loopback_without_ssh(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ssh = root / 'ssh'
+            marker = root / 'ssh-called'
+            ssh.write_text('#!/bin/bash\ntouch "' + str(marker) + '"\nexit 255\n')
+            ssh.chmod(0o755)
+            inventory = root / 'hosts'
+            inventory.write_text('localhost\n127.0.0.1\n::1\n')
+            report = root / 'report.json'
+            subprocess.run(['bash', str(SCRIPT), '--inventory', str(inventory),
+                            '--json', str(report)], capture_output=True,
+                           env=dict(os.environ, PATH=directory + ':' + os.environ['PATH']))
+            self.assertFalse(marker.exists())
+            data = json.loads(report.read_text())
+            self.assertEqual(len(data['servers']), 3)
+            for server in data['servers']:
+                self.assertIn('cpu', server['data'])
+                self.assertNotEqual(server['exit_code'], 255)
+
     def test_remote_transport_and_continuation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
