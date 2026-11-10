@@ -105,3 +105,52 @@ Une erreur « Could not resolve hostname » indique un problème de nom ou de DN
 Pour une cible distante dont la clé SSH est inconnue, vérifier son empreinte
 auprès de l'administrateur, puis enregistrer la clé avec une première connexion
 SSH interactive. Le contrôle strict des clés reste activé.
+
+## Matrice de flux réseau (optionnelle)
+
+Sans `--flows`, aucun test de flux n'est effectué et le tableau JSON `flows`
+est vide. Pour ajouter ces tests aux contrôles de plateforme :
+
+```bash
+bash bin/checkplateforme.sh --localhost --flows flux-local.csv --json local-flux.json
+bash bin/checkplateforme.sh --inventory examples/serveurs.csv --flows examples/flux.csv --json parc-flux.json
+```
+
+La matrice CSV comporte cinq colonnes, avec en-tête facultatif :
+
+```csv
+source,destination,port,protocole,description
+localhost,192.0.2.10,22,tcp,SSH et SFTP
+serveur01,192.0.2.20,1521,tcp,Oracle SQLPlus
+serveur01,192.0.2.53,53,udp,DNS
+```
+
+Remplacer les noms et adresses d'exemple. Les sources distantes doivent être
+présentes dans l'inventaire : leur utilisateur et port SSH y sont récupérés.
+`--localhost` n'accepte que des sources locales (`localhost`, `127.0.0.1`, `::1`).
+Les destinations n'ont pas besoin de figurer dans l'inventaire.
+La matrice entière et les sources sont validées avant tout contrôle.
+Les tests sont séquentiels, exécutés depuis chaque source et non depuis le poste
+qui pilote les connexions SSH. Aucun secret applicatif n'est nécessaire.
+
+Pour TCP, Bash ouvre une connexion sans envoyer de données applicatives.
+`timeout` (GNU coreutils, normalement présent sur RHEL minimal) limite chaque
+test, résolution DNS comprise, à 5 secondes (arrêt forcé après 1 seconde de plus).
+`getent`, s'il est disponible sur la source, permet d'identifier les erreurs de
+résolution. Aucun paquet n'est installé automatiquement.
+
+Les résultats console et JSON distinguent `accessible`, `refused`, `timeout`,
+`dns_error`, `connection_error`, `source_error` et `indeterminate`.
+Le tableau `flows` contient une entrée par ligne de matrice : source, destination,
+port, protocole, description et résultat (statut, détail, code de sortie).
+Un refus ou un délai dépassé ne prouve pas un blocage par le pare-feu : le service
+peut ne pas écouter, ou la destination/le routage peut être indisponible.
+Ces tests ne valident pas l'authentification SSH/SFTP ni une connexion SQLPlus.
+
+**UDP :** les lignes sont acceptées mais signalées `indeterminate`, sans émission
+de paquet. Sans requête et réponse propres au service, il est impossible de
+confirmer l'ouverture du flux. Aucun succès UDP n'est annoncé par défaut.
+
+Un échec de connectivité contribue au code global **1** ; un test indéterminé,
+un outil manquant ou une erreur d'exécution contribue au code **2**.
+Les erreurs de plateforme et de flux sont agrégées (2 prioritaire sur 1).

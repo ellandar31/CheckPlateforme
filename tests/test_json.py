@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import socket
 import subprocess
 import tempfile
 import unittest
@@ -44,6 +45,7 @@ class JsonReportTests(unittest.TestCase):
             result = subprocess.run(command, capture_output=True, text=True)
             data = json.loads(report.read_text())
             self.assertEqual(data['exit_code'], result.returncode)
+            self.assertEqual(data['flows'], [])
             self.assertIn('INFO CPU', result.stderr)
             metrics = data['servers'][0]['data']
             self.assertGreater(metrics['cpu']['logical_count'], 0)
@@ -112,6 +114,73 @@ class JsonReportTests(unittest.TestCase):
             data = json.loads(report.read_text())
             self.assertEqual(data['servers'][0]['target'], 'localhost')
             self.assertIn('cpu', data['servers'][0]['data'])
+
+    def test_flow_probe_tcp_and_udp(self):
+        source = SCRIPT.read_text().rsplit('main "$@"', 1)[0]
+        def probe(port, protocol='tcp'):
+            result = subprocess.run(['bash', '-c', source + '\nprobe_flow 127.0.0.1 "$1" "$2"',
+                                     'test', str(port), protocol], capture_output=True, text=True)
+            return result.returncode, json.loads(result.stdout)
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen()
+            port = listener.getsockname()[1]
+            rc, data = probe(port)
+            self.assertEqual(rc, 0)
+            self.assertEqual(data['status'], 'accessible')
+        rc, data = probe(port)
+        self.assertEqual(rc, 1)
+        self.assertEqual(data['status'], 'refused')
+        rc, data = probe(port, 'udp')
+        self.assertEqual(rc, 2)
+        self.assertEqual(data['status'], 'indeterminate')
+
+    def test_optional_matrix_with_remote_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ssh = root / 'ssh'
+            ssh.write_text('#!/bin/bash\nbash -s\n')
+            ssh.chmod(0o755)
+            inventory = root / 'hosts.csv'
+            inventory.write_text('host,user,port\nsource01,audit,2222\n')
+            matrix = root / 'flows.csv'
+            matrix.write_text('source,destination,port,protocole,description\n'
+                              'source01,127.0.0.1,53,udp,"DNS, test"\n')
+            report = root / 'report.json'
+            result = subprocess.run(['bash', str(SCRIPT), '--inventory', str(inventory),
+                                     '--flows', str(matrix), '--json', str(report)],
+                                    env=dict(os.environ, PATH=directory + ':' + os.environ['PATH']),
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            flows = json.loads(report.read_text())['flows']
+            self.assertEqual(flows[0]['source'], 'source01')
+            self.assertEqual(flows[0]['description'], 'DNS, test')
+            self.assertEqual(flows[0]['result']['status'], 'indeterminate')
+
+    def test_invalid_matrix_before_collection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for row in ['localhost,host,0,tcp,test',
+                        'localhost,host,22,ssh,test',
+                        'unknown-source,host,22,tcp,test',
+                        'localhost,$(touch bad),22,tcp,test']:
+                matrix = root / 'flows.csv'
+                matrix.write_text(row)
+                report = root / 'report.json'
+                result = subprocess.run(['bash', str(SCRIPT), '--localhost',
+                                         '--flows', str(matrix), '--json', str(report)],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertFalse(report.exists())
+
+    def test_flow_timeout_and_dns_status(self):
+        source = SCRIPT.read_text().rsplit('main "$@"', 1)[0]
+        for code, status in [(124, 'timeout'), (3, 'dns_error')]:
+            result = subprocess.run(['bash', '-c', source +
+                                     '\ntimeout() { return ' + str(code) + '; }\nprobe_flow host 22 tcp'],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(json.loads(result.stdout)['status'], status)
 
     def test_remote_transport_and_continuation(self):
         with tempfile.TemporaryDirectory() as directory:

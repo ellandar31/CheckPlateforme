@@ -1,0 +1,4 @@
+source,destination,port,protocole,description
+localhost,rhel01.example.local,22,tcp,SSH et SFTP
+rhel01.example.local,oracle01.example.local,1521,tcp,Oracle SQLPlus
+rhel01.example.local,dns01.example.local,53,udp,DNS (résultat indéterminé sans test applicatif)
