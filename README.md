@@ -4,8 +4,8 @@ Vérification en ligne de commande d'une plateforme RHEL, en lecture seule,
 sans interface graphique, agent distant ni installation automatique de paquets.
 
 ```bash
-bash bin/checkplateforme --localhost
-bash bin/checkplateforme --inventory examples/serveurs.txt
+bash bin/checkplateforme.sh --localhost
+bash bin/checkplateforme.sh --inventory examples/serveurs.txt
 ```
 
 Prérequis : Bash, uname, df et systemd sur les serveurs, normalement disponibles
@@ -36,7 +36,9 @@ séquentiellement ; une erreur n'empêche pas le contrôle des suivantes.
 
 - Distribution RHEL attendue et identification de la version.
 - Noyau et architecture.
-- Mémoire totale et disponible.
+- CPU : modèle et nombre de processeurs logiques en ligne.
+- RAM : totale, disponible et utilisée estimée (totale moins disponible), en kio.
+- Swap : totale, libre et utilisée, en kio ; absence de swap signalée.
 - Espace des systèmes de fichiers.
 - État systemd et unités en échec.
 
@@ -47,13 +49,14 @@ Un contrôle indisponible est signalé comme une erreur.
 Cette première version constitue un état technique de base. Les versions
 acceptées, seuils CPU/mémoire/disque, partitions, services et paramètres réseau
 attendus restent à définir selon le cahier de livraison. Les valeurs mémoire et
-disque sont informatives. df peut attendre sur un montage réseau défaillant.
+disque sont informatives. CPU, RAM et swap sont lus directement dans `/proc`,
+sans paquet supplémentaire. df peut attendre sur un montage réseau défaillant.
 
 ## Validation
 
 ```bash
-bash -n bin/checkplateforme
-bash bin/checkplateforme --help
+bash -n bin/checkplateforme.sh
+bash bin/checkplateforme.sh --help
 ```
 
 Valider les contrôles complets sur une VM RHEL démarrée avec systemd.

@@ -24,10 +24,51 @@ collect() {
     fi
     printf 'INFO Noyau et architecture\n'
     uname -srmo || errors=1
+    local cpu_count=0 cpu_model='' field
+    if [[ -r /proc/cpuinfo ]]; then
+        while IFS=: read -r key value; do
+            # Retirer les espaces autour du nom du champ et devant sa valeur.
+            key=${key//[[:space:]]/}
+            value=${value#"${value%%[![:space:]]*}"}
+            case "$key" in
+                processor) ((cpu_count+=1)) ;;
+                modelname|Processor|cpu) [[ -n $cpu_model ]] || cpu_model=$value ;;
+            esac
+        done < /proc/cpuinfo
+        if (( cpu_count > 0 )); then
+            printf 'INFO CPU : %s processeur(s) logique(s) en ligne\n' "$cpu_count"
+        else
+            printf 'ERREUR Nombre de CPU indéterminé\n'; errors=1
+        fi
+        printf 'INFO Modèle CPU : %s\n' "${cpu_model:-non renseigné}"
+    else
+        printf 'ERREUR /proc/cpuinfo illisible\n'; errors=1
+    fi
+    local ram_total='' ram_available='' swap_total='' swap_free=''
     if [[ -r /proc/meminfo ]]; then
         while read -r key value unit; do
-            case "$key" in MemTotal:|MemAvailable:) printf 'INFO %s %s %s\n' "$key" "$value" "$unit" ;; esac
+            case "$key" in
+                MemTotal:) ram_total=$value ;;
+                MemAvailable:) ram_available=$value ;;
+                SwapTotal:) swap_total=$value ;;
+                SwapFree:) swap_free=$value ;;
+            esac
         done < /proc/meminfo
+        for field in ram_total ram_available swap_total swap_free; do
+            if [[ ! ${!field} =~ ^[0-9]+$ ]]; then
+                printf 'ERREUR Champ mémoire absent ou invalide : %s\n' "$field"
+                errors=1
+            fi
+        done
+        if [[ $ram_total =~ ^[0-9]+$ && $ram_available =~ ^[0-9]+$ ]]; then
+            printf 'INFO RAM (kio) : totale=%s disponible=%s utilisée (estimée)=%s\n' \
+                "$ram_total" "$ram_available" "$((ram_total - ram_available))"
+        fi
+        if [[ $swap_total =~ ^[0-9]+$ && $swap_free =~ ^[0-9]+$ ]]; then
+            printf 'INFO SWAP (kio) : totale=%s libre=%s utilisée=%s\n' \
+                "$swap_total" "$swap_free" "$((swap_total - swap_free))"
+            (( swap_total > 0 )) || printf 'INFO Aucun swap configuré\n'
+        fi
     else
         printf 'ERREUR /proc/meminfo illisible\n'; errors=1
     fi
