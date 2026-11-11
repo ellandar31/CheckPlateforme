@@ -218,6 +218,7 @@ bin/
 ├── checkflux.sh         # Tests des flux depuis une matrice
 └── DPI/
     ├── checkpackages.sh # Inventaire RPM par serveur
+    ├── checkjava.sh     # Processus Java en cours
     └── README.md        # Documentation des scripts spécifiques
 ```
 
@@ -278,3 +279,20 @@ Même inventaire CSV à séparateur `;`, collecte locale ou via SSH, sans sudo n
 installation supplémentaire. Affichage console et JSON dédié `package_inventory`.
 Détails et prérequis dans [bin/DPI/README.md](bin/DPI/README.md).
 Ce JSON DPI n'est pas encore pris en charge par les vues plateforme/flux du visualiseur.
+
+## DPI : processus Java actifs
+
+Le script autonome `bin/DPI/checkjava.sh` relève les processus Java actuellement
+visibles sur chaque serveur, sans JDK ni paquet supplémentaire :
+
+```bash
+bash bin/DPI/checkjava.sh --localhost --json java-local.json
+bash bin/DPI/checkjava.sh --inventory examples/serveurs.csv --json java-parc.json
+```
+
+PID, propriétaire, état, mémoire, threads et exécutable sont affichés en console
+et dans le JSON dédié `java_inventory`. L'option `--include-command-line`
+ajoute les arguments de lancement (susceptibles de contenir des secrets).
+Les permissions de `/proc` limitent la visibilité du relevé. Détails dans
+[bin/DPI/README.md](bin/DPI/README.md). Le visualiseur plateforme/flux ne prend
+pas encore en charge ce rapport DPI.

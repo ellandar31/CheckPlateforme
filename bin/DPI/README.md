@@ -59,3 +59,54 @@ Codes de retour : **0** toutes les collectes réussies, **2** au moins une erreu
 Les échecs SSH conservent aussi leur code (par exemple 255) dans l'entrée de cible.
 Ce rapport DPI est distinct des deux formats plateforme/flux pris en charge par
 le visualiseur HTML actuel.
+
+## Processus Java en cours
+
+`checkjava.sh` est un script autonome de collecte en lecture seule. Il lit `/proc`
+et n'utilise ni JDK, ni `jps`, ni `jcmd`. Aucune installation ni élévation automatique
+des droits n'est effectuée.
+
+```bash
+bash bin/DPI/checkjava.sh --localhost --json java-local.json
+bash bin/DPI/checkjava.sh --inventory examples/serveurs.csv --json java-parc.json
+```
+
+Le même inventaire `host;user;port` et les mêmes règles SSH s'appliquent.
+Les résultats sont affichés dans la console et enregistrés par défaut dans
+`rapport-java.json`. Le tableau `java_inventory` contient une entrée par cible,
+avec son code de retour et les données collectées :
+
+- horodatage UTC de début de collecte (`collected_at_utc`) ;
+- nombre de processus détectés (`process_count`) et tableau `processes` ;
+- PID, PID parent, UID et nom d'utilisateur si résolvable ;
+- nom du processus, état Linux, mémoire résidente en kio et nombre de threads ;
+- chemin de l'exécutable, s'il est accessible ;
+- compteurs des entrées illisibles et des processus disparus pendant le relevé.
+
+Les processus dont le nom est `java` ou `java.bin`, ou dont le chemin d'exécutable
+se termine ainsi, sont retenus. Les applications embarquant une JVM dans un autre
+exécutable ou utilisant un binaire Java renommé peuvent ne pas être détectées.
+Ce n'est pas une liste des versions de Java installées.
+
+Pour relever aussi les arguments de lancement, explicitement :
+
+```bash
+bash bin/DPI/checkjava.sh --inventory examples/serveurs.csv --include-command-line --json java-detail.json
+```
+
+Les arguments peuvent contenir des identifiants, mots de passe ou jetons : cette
+option les écrit tels quels dans la console et le JSON. Par défaut, `arguments`
+vaut `null`. Avec l'option, il contient un tableau préservant chaque argument.
+Le script ne lit pas les variables d'environnement des processus.
+
+Il s'agit d'un instantané des **processus visibles par le compte de collecte**,
+dans son espace de PID. `hidepid`, les permissions et les conteneurs peuvent
+masquer des processus : une liste vide n'affirme pas qu'aucune JVM n'existe sur
+l'hôte entier. Un chemin d'exécutable inaccessible reste vide ; une mémoire
+indisponible vaut `null`. Aucun `sudo` n'est lancé automatiquement.
+
+Codes de retour : **0** collecte réalisée, même si aucun Java n'est visible ;
+**2** collecte impossible ou partielle. Les résultats accessibles sont conservés
+en cas de collecte partielle. Un processus disparu en cours de relevé est compté
+séparément. Une erreur SSH n'empêche pas de traiter les serveurs suivants.
+Le visualiseur HTML plateforme/flux ne lit pas encore ce format DPI.
