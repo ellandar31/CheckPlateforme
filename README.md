@@ -228,3 +228,37 @@ Les fonctions nécessaires aux sources SSH sont transmises par le script.
 Le répertoire `bin/DPI` accueille vos scripts spécifiques de collecte d'informations
 sur la plateforme. Son contenu n'est exécuté automatiquement par aucun des deux
 scripts ; lancer explicitement les scripts que vous y ajouterez.
+
+## Visualiseur portable des rapports
+
+Le fichier **`visualizer/index.html`** est autonome : le livrer seul avec les
+rapports JSON. Aucun serveur, outil Python, bibliothèque externe ni connexion
+Internet n'est nécessaire. Ouvrir le fichier HTML dans un navigateur récent
+(Firefox, Chrome ou Edge), puis choisir une vue et charger le JSON correspondant :
+
+- **Plateforme** : résumé par serveur, CPU/RAM/swap, attendus, filesystems et systemd.
+- **Flux réseau** : source, destination, port, protocole, résultat et diagnostic.
+
+Les deux rapports restent séparés. Ils peuvent être chargés indépendamment et
+restent disponibles en passant d'une vue à l'autre tant que la page est ouverte.
+La recherche et le filtre « Écarts, erreurs et indéterminés » facilitent l'analyse.
+Le bouton « Imprimer / PDF » utilise l'impression du navigateur sur la vue et
+les résultats actuellement affichés. Les données JSON d'un serveur sont aussi
+consultables dans sa fiche.
+
+Le traitement des fichiers reste local au navigateur, sans envoi réseau ni
+stockage persistant. La fermeture ou l'actualisation de la page efface les
+rapports chargés. Les fichiers invalides ou ne correspondant pas à la vue sont
+signalés ; un rapport précédemment chargé reste affiché avec son nom.
+Un rapport sans attendus n'est pas une certification de conformité à une livraison.
+
+La taille de chaque JSON est limitée à 25 Mio. Si le navigateur de l'entreprise
+interdit l'ouverture des fichiers HTML locaux, utiliser un navigateur autorisé
+ou demander le mode de distribution approuvé à l'équipe poste de travail.
+
+Validation du visualiseur en développement (Playwright et Chromium requis
+uniquement pour ces tests, pas pour les clients) :
+
+```bash
+python3 tests/test_visualizer.py
+```
