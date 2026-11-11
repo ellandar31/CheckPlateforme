@@ -375,3 +375,27 @@ client selon sa politique navigateur.
 ```bash
 python3 tests/test_nodes_visualizer.py
 ```
+
+### Vue synthétique et détail des nœuds
+
+Le visualiseur nodes affiche par défaut un bloc par serveur : nom cliquable,
+version de l'OS, uptime au moment du relevé, FQDN/IPs, charge, barres RAM/swap et
+jauges d'occupation par point de montage. Les jauges sont bleues sous 80 %, orange
+à partir de 80 % et rouges à partir de 90 %. Ces seuils sont des repères visuels,
+pas des critères de conformité ni des contrôles ajoutés au script.
+
+Cliquer sur le nom du serveur ouvre sa fiche détaillée : RAM/swap avec capacités,
+chaque disque, processus Java, interfaces réseau, système et CPU. « Retour à la
+synthèse » conserve les filtres ; changer un filtre revient aussi à la synthèse.
+Le bouton d'impression porte sur la vue actuellement affichée.
+
+Les pourcentages mémoire sont calculés à partir des capacités mesurées. Un swap
+nul est explicitement indiqué, une mesure inconnue n'est jamais présentée comme
+0 %. Les anneaux CPU de la vue détaillée montrent des valeurs, pas une utilisation.
+Les jauges filesystem utilisent `percentUsed` si présent, sinon `used / total`.
+
+Le tableau applicatif apparaît si `node.appServers` est fourni, ou si une entrée
+de `appServers` à la racine est rattachée par `hostname`, `nodeHostname` ou `node`
+égal au nom du serveur. Les colonnes utilisent `env`/`environment`,
+`plateforme`/`platform`, `serveur`/`name`, `xmx`/`XMX` et `port`. Sans ces données,
+aucune application ni valeur XMX/port n'est inventée.
