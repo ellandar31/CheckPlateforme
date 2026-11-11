@@ -116,8 +116,7 @@ class NodesVisualizerTests(unittest.TestCase):
     def test_merged_packages_matrix_and_server_detail(self):
         with tempfile.TemporaryDirectory() as directory, sync_playwright() as pw:
             def package(name, version='1.0'):
-                return dict(name=name, epoch=0, version=version, release='1.el9',
-                            architecture='x86_64', package_manager='rpm', installed_at_unix=1)
+                return dict(name=name, version=version, release='1.el9', arch='x86_64', size=4096, group='System/Base')
             report = Path(directory) / 'nodes.json'
             report.write_text(json.dumps({'nodes': [
                 dict(hostname='node01', ip='192.0.2.1', cpu={'model':'CPU test'},

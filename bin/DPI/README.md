@@ -8,65 +8,6 @@ Utiliser Bash et les commandes déjà présentes sur RHEL minimal, privilégier 
 collectes en lecture seule et documenter les éventuels prérequis de chaque script.
 Ne pas stocker de mots de passe, clés privées ou rapports contenant des secrets ici.
 
-## Inventaire des paquets installés
-
-`checkpackages.sh` est autonome, en lecture seule, sans installation de paquet
-ni import d'un autre script. Il nécessite Bash et `rpm` sur chaque cible RHEL.
-Aucun sudo n'est requis pour consulter la base RPM.
-
-```bash
-# Machine locale
-bash bin/DPI/checkpackages.sh --localhost --json packages-local.json
-
-# Plateforme entière, avec le même inventaire que les autres scripts
-bash bin/DPI/checkpackages.sh --inventory examples/serveurs.csv --json packages-parc.json
-```
-
-L'inventaire utilise le séparateur `;` :
-
-```csv
-host;user;port
-localhost;;
-serveur01;audit;22
-serveur02;audit;2222
-```
-
-Les sources locales (`localhost`, `127.0.0.1`, `::1`) sont interrogées directement.
-Les autres serveurs utilisent SSH avec authentification non interactive et
-vérification stricte des clés d'hôte, comme les autres scripts.
-Une cible inaccessible n'empêche pas de traiter les suivantes.
-
-La console affiche uniquement la cible, le nombre de paquets, les erreurs et le
-bilan de collecte ; la liste détaillée reste dans le JSON. Le JSON par défaut est
-`rapport-packages.json` ; un rapport existant n'est jamais écrasé.
-Le tableau `package_inventory` contient, pour chaque cible, `target`, `exit_code`
-et `data` (ou `null` si la collecte distante n'a pas pu être exécutée).
-Les données contiennent le nom du serveur, le nombre de paquets, une éventuelle
-erreur et le tableau `packages` :
-
-- `name` : nom du paquet ;
-- `epoch`, `version`, `release` : version RPM complète ;
-- `architecture` : architecture ;
-- `installed_at_unix` : date d'installation, en secondes depuis l'époque Unix UTC.
-
-Toutes les occurrences RPM sont conservées, notamment les différents noyaux
-installés ou les variantes d'architecture d'un même paquet. L'ordre est celui
-de la base RPM. Cette collecte ne recense pas les logiciels installés hors RPM,
-les paquets dans les conteneurs ou les environnements Python/npm.
-Une liste vide, une réponse invalide ou un échec RPM sont des erreurs ; aucune
-liste partielle n'est présentée comme complète.
-
-Codes de retour : **0** toutes les collectes réussies, **2** au moins une erreur.
-Les échecs SSH conservent aussi leur code (par exemple 255) dans l'entrée de cible.
-Ce rapport DPI dispose d'un visualiseur dédié et autonome :
-`visualizer/packages.html`. Livrer ce seul fichier HTML avec le JSON, l'ouvrir dans
-le navigateur, puis sélectionner le rapport packages. Recherche, filtres par
-serveur et architecture, erreurs de collecte et impression PDF sont disponibles.
-La vue par défaut compare les versions RPM en lignes avec les serveurs en colonnes ;
-le détail par serveur reste accessible dans le second onglet. Les absences sont
-distinguées des collectes indisponibles, et les versions multiples sont conservées.
-Les rapports plateforme/flux restent dans `visualizer/index.html`.
-
 ## Processus Java en cours
 
 `checkjava.sh` est un script autonome de collecte en lecture seule. Il lit `/proc`
@@ -152,15 +93,12 @@ Chaque entrée de `nodes` contient :
   sous forme de chaînes ; ce ne sont pas des débits) ;
 - `disks` : `name`, `total`, `used`, `available`, `percentUsed`, `mount` ;
   capacités numériques en kio et pourcentage avec son symbole `%` ;
-- `rpms` : tableau des paquets installés, collectés directement par le script.
-  Chaque entrée contient `package_manager` (`rpm` ou `dpkg`), `name`, `epoch`,
-  `version`, `release`, `architecture`, `installed_at_unix`. Les entrées dpkg
-  comportent aussi `version_full` et une date d'installation `null`.
-  La collecte et son repli sont identiques à `checkpackages.sh`, dont le code est
-  embarqué : aucune dépendance à ce fichier pour livrer `checknodes.sh` seul.
-  Une erreur RPM déclenche automatiquement le repli dpkg. Si les deux échouent,
-  `rpms` reste vide et le code global vaut 2, sans perdre les mesures système.
-  Les motifs d'erreur et de repli sont affichés en console.
+- `rpms` : tableau des paquets installés, collectés directement par le script,
+  avec exactement `name`, `version`, `release`, `arch`, `size` et `group`.
+  Le repli vers dpkg est automatique si RPM est absent ou échoue. Aucune liste
+  de paquets n'est affichée dans la console. En cas d'échec des deux collectes,
+  `rpms` reste vide et le script retourne 2, sans perdre les mesures système.
+
 
 Par défaut, les chaînes `processes` contiennent le nom de commande sans ses
 arguments. Pour obtenir les lignes de commande complètes comme dans le modèle :
@@ -209,55 +147,40 @@ accès réseau n'est nécessaire. Les entrées `{}` du modèle sont ignorées.
 Le visualiseur ne peut pas déduire les échecs ou les cibles omises depuis le JSON :
 conserver les diagnostics console et le code retour du script.
 
-### Repli automatique APT / Debian / Ubuntu
 
-```bash
-bash bin/DPI/checkpackages.sh --localhost --json packages-local.json
-bash bin/DPI/checkpackages.sh --inventory examples/serveurs.csv --json packages-parc.json
-```
+## Paquets intégrés à nodes
 
-RPM est interrogé en premier. S'il est absent, échoue ou retourne une liste
-vide ou invalide, la collecte utilise automatiquement `dpkg-query`
-pour les paquets gérés par APT. Seuls les paquets à l'état `installed` sont retenus,
-pas les paquets supprimés ayant laissé des fichiers de configuration.
-Ce repli n'installe rien, ne lance pas `apt update` et ne nécessite pas sudo.
-Ce comportement s'applique en local et sur chaque cible SSH. Si RPM réussit,
-dpkg n'est pas interrogé. L'ancienne option `--apt-fallback` est retirée.
+La collecte des paquets est embarquée dans `checknodes.sh`, sans fichier shell
+à importer. Chaque `nodes[].rpms` contient exactement :
 
-Le JSON conserve `package_inventory`, avec `package_manager: "dpkg"` pour le repli,
-`fallback_used: true` et `rpm_error` expliquant le problème RPM. Une collecte dpkg
-réussie donne `error: null` et un code 0 ; un échec des deux collectes donne 2.
-Les listes partielles RPM et dpkg ne sont jamais mélangées.
+- `name` : nom du paquet ;
+- `version` : version, avec préfixe `epoch:` si l'epoch est non nul ;
+- `release` : release RPM ou révision Debian ; vide pour une version Debian native ;
+- `arch` : architecture ;
+- `size` : taille installée en octets (entier) ;
+- `group` : groupe RPM ou section Debian ; vide si inconnu.
 
-Pour un paquet Debian, `version_full` conserve la version Debian exacte, `epoch`,
-`version` et `release` en donnent les composantes. Sans révision Debian, `release`
-est une chaîne vide. `installed_at_unix` vaut `null` : `dpkg-query` ne fournit pas
-une date fiable d'installation. Aucun horodatage n'est inventé.
+RPM est interrogé en premier. En cas d'absence, d'erreur ou de liste vide/invalide,
+le script utilise `dpkg-query` sans installer de paquet ni lancer de mise à jour.
+Seuls les paquets à l'état `installed` sont retenus. `Installed-Size` est multiplié
+par 1 024 pour obtenir des octets ; `Section` fournit le groupe Debian.
+La version Debian est séparée à son dernier tiret sans perdre son epoch.
 
-`visualizer/packages.html` lit les deux gestionnaires, les indique dans chaque
-colonne/fiche et affiche la version Debian complète. Les dates dpkg sont indiquées
-comme non disponibles. Les comparaisons distinguent RPM et dpkg ; elles ne font
-pas d'équivalence entre paquets ou architectures de distributions différentes.
+Une erreur des deux gestionnaires conserve le nœud système, laisse `rpms` vide
+et contribue au code 2. Les listes partielles ne sont pas mélangées. La console
+contient uniquement les compteurs et diagnostics, jamais les paquets détaillés.
+Les versions et architectures multiples restent distinctes dans le JSON.
 
+## Visualiseur nodes unifié
 
-## Visualiseur nodes unifié : serveurs et packages
+Livrer uniquement `visualizer/nodes.html` avec le JSON de `checknodes.sh`.
+Le bandeau **Synthèse des serveurs / Packages** permet de lire les mesures et
+la matrice des paquets dans le même fichier HTML autonome. Le détail du serveur
+reste accessible depuis la synthèse et les en-têtes de la matrice ; le retour
+conserve les filtres. L'impression PDF porte sur la vue actuellement affichée.
 
-Livrer le seul fichier `visualizer/nodes.html` avec le JSON de `checknodes.sh`.
-Son bandeau propose **Synthèse des serveurs** et **Packages** : la seconde vue
-compare directement `nodes[].rpms`, sans charger un second rapport.
-Les fonctions et styles sont embarqués dans le HTML, sans dépendance à
-`visualizer/packages.html`.
-
-Les noms de serveurs et le bouton « Voir le détail du serveur » ouvrent la fiche
-validée précédemment. Depuis la matrice, cliquer sur un en-tête de serveur ouvre
-la même fiche, puis « Retour aux packages » ramène au tableau filtré.
-Les recherches sont mémorisées séparément pour les deux vues et le filtre serveur
-est partagé. La matrice propose aussi les filtres architecture et différences,
-avec 100 lignes par défaut et un bouton pour afficher toute la liste.
-
-Pour respecter les limites du format nodes, une liste `rpms` vide ou absente reste
-inconnue. « Non listé » désigne un paquet qui ne figure pas dans une liste non vide,
-pas une absence certifiée sur le serveur. Les différences portent sur les listes
-exportées, sans inventer un résultat de collecte absent du JSON.
-`visualizer/packages.html` reste disponible pour les rapports indépendants de
-`checkpackages.sh`. Les deux scripts ne détaillent plus les paquets en console.
+Une liste de paquets vide ou absente reste inconnue dans la matrice. « Non listé »
+indique seulement qu'un paquet ne figure pas dans une liste fournie. Les erreurs
+et nœuds omis ne peuvent pas être reconstitués depuis ce format sans statut :
+conserver les diagnostics console. Les anciens rapports utilisant `architecture`
+restent lisibles, avec taille et groupe affichés comme non renseignés.

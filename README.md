@@ -217,7 +217,6 @@ bin/
 ├── checkplateforme.sh   # Collecte et comparaison aux attendus
 ├── checkflux.sh         # Tests des flux depuis une matrice
 └── DPI/
-    ├── checkpackages.sh # Inventaire RPM par serveur
     ├── checkjava.sh     # Processus Java en cours
     ├── checknodes.sh    # Export au format nodes.json
     └── README.md        # Documentation des scripts spécifiques
@@ -266,22 +265,6 @@ uniquement pour ces tests, pas pour les clients) :
 python3 tests/test_visualizer.py
 ```
 
-## DPI : paquets installés sur la plateforme
-
-Le script autonome `bin/DPI/checkpackages.sh` collecte les paquets RPM de chaque
-serveur, avec leur version complète, architecture et date d'installation :
-
-```bash
-bash bin/DPI/checkpackages.sh --localhost --json packages-local.json
-bash bin/DPI/checkpackages.sh --inventory examples/serveurs.csv --json packages-parc.json
-```
-
-Même inventaire CSV à séparateur `;`, collecte locale ou via SSH, sans sudo ni
-installation supplémentaire. Résumé de collecte en console et liste détaillée
-dans le JSON dédié `package_inventory`.
-Détails et prérequis dans [bin/DPI/README.md](bin/DPI/README.md).
-Ce JSON DPI dispose d'un visualiseur autonome dédié : `visualizer/packages.html`.
-
 ## DPI : processus Java actifs
 
 Le script autonome `bin/DPI/checkjava.sh` relève les processus Java actuellement
@@ -298,39 +281,6 @@ ajoute les arguments de lancement (susceptibles de contenir des secrets).
 Les permissions de `/proc` limitent la visibilité du relevé. Détails dans
 [bin/DPI/README.md](bin/DPI/README.md). Le visualiseur plateforme/flux ne prend
 pas encore en charge ce rapport DPI.
-
-## Visualiseur packages (DPI)
-
-Livrer **`visualizer/packages.html`** seul avec le JSON produit par
-`bin/DPI/checkpackages.sh`. Ouvrir le HTML dans un navigateur récent, puis
-sélectionner le rapport packages. Aucun serveur, import, installation ni accès
-Internet n'est nécessaire. Les données restent dans le navigateur jusqu'à la
-fermeture ou l'actualisation de la page ; aucun fichier n'est envoyé.
-
-Ce visualiseur est dédié à `package_inventory`, indépendamment des rapports
-plateforme, flux et Java. Il présente :
-
-- un résumé des serveurs, du nombre de paquets relevés et des erreurs ;
-- un filtre par serveur, architecture et état de collecte ;
-- une recherche par nom, epoch, version, release ou architecture ;
-- les dates d'installation en UTC, sans fusionner les versions/architectures ;
-- une impression / export PDF des résultats affichés.
-
-Les longues listes sont limitées à 100 lignes par serveur : « Afficher les …
-packages » permet de voir toute la liste filtrée avant de l'imprimer. Les erreurs
-sans inventaire restent visibles, même avec une recherche ou un filtre
-architecture. Les rapports incorrects et les compteurs incohérents sont rejetés,
-sans effacer le rapport précédemment chargé. Limite par fichier : 25 Mio.
-
-Le test navigateur utilise le HTML exact en mode hors connexion, car la politique
-du navigateur cloud bloque `file://`. L'ouverture directe du fichier est à vérifier
-sur le poste client selon la politique du navigateur d'entreprise.
-
-```bash
-python3 tests/test_packages_visualizer.py
-```
-
-Playwright et Chromium sont requis uniquement pour ces tests de développement.
 
 ## DPI : export nodes.json
 
@@ -401,74 +351,44 @@ de `appServers` à la racine est rattachée par `hostname`, `nodeHostname` ou `n
 `plateforme`/`platform`, `serveur`/`name`, `xmx`/`XMX` et `port`. Sans ces données,
 aucune application ni valeur XMX/port n'est inventée.
 
-### Comparaison des RPM entre serveurs
 
-`visualizer/packages.html` ouvre désormais par défaut une matrice : **une ligne
-par nom de RPM et une colonne par serveur**. Chaque cellule affiche toutes les
-versions installées sous la forme `epoch:version-release [architecture]`.
-L'onglet « Détail par serveur » conserve les dates d'installation et les fiches
-individuelles.
+### Packages intégrés à nodes
 
-La recherche filtre les noms et les versions. Les filtres « Différences et
-absences » et « Comparaison incomplète » permettent d'isoler les lignes utiles.
-Les différences entre collectes réussies sont surlignées. « Absent » ne s'affiche
-que pour une collecte réussie ; un serveur en erreur reste « Inconnu ». Une
-collecte partielle n'est jamais utilisée pour certifier une absence ou une égalité.
-Avec une architecture sélectionnée, la présence et les différences portent sur
-cette architecture uniquement. Un seul serveur réussi ne permet pas de comparer.
-
-La matrice conserve plusieurs versions du même paquet (par exemple les noyaux)
-et distingue les architectures. Elle compare les ensembles de versions présentes,
-sans classer les versions RPM ni déterminer laquelle est la plus récente.
-Les dates d'installation ne participent pas à la comparaison.
-
-Les en-têtes et noms de RPM restent visibles lors du défilement du tableau.
-Les premières 100 lignes sont affichées, avec un bouton pour afficher toute la
-matrice filtrée avant impression. La vue reste autonome et utilisable hors ligne.
-
-### Inventaire packages avec repli APT automatique
-
-Le repli vers les paquets Debian/Ubuntu est **automatique** si la collecte RPM
-est indisponible ou en erreur :
+Une seule collecte suffit pour le système et les paquets :
 
 ```bash
-bash bin/DPI/checkpackages.sh --inventory examples/serveurs.csv --json packages-parc.json
+bash bin/DPI/checknodes.sh --inventory examples/serveurs.csv --json nodes-parc.json
 ```
 
-Le script utilise `dpkg-query` en lecture seule, sans installation ni commande
-APT de mise à jour. Le JSON indique le gestionnaire réellement utilisé et la
-raison du repli. Le visualiseur packages prend en charge RPM et dpkg, y compris
-les versions Debian sans révision et l'absence de date d'installation.
-Aucune option supplémentaire n’est nécessaire.
+Chaque entrée de `nodes[].rpms` contient exactement les six champs suivants :
 
-### Paquets intégrés à checknodes
+```json
+{"name":"exemple","version":"2:1.0","release":"1ubuntu1","arch":"amd64","size":12288,"group":"utils"}
+```
 
-`checknodes.sh` embarque désormais la collecte de `checkpackages.sh` : aucun appel
-ni import de ce dernier n'est nécessaire. Chaque `nodes[].rpms` contient les
-paquets du serveur, avec `package_manager`, `name`, `epoch`, `version`, `release`,
-`architecture` et `installed_at_unix`. Pour Debian/Ubuntu, `version_full` conserve
-la version exacte et la date d'installation reste `null`.
+`size` est la taille installée en octets. Pour Debian/Ubuntu, `Installed-Size`
+est converti de kio en octets et `group` correspond à `Section`. Pour RPM,
+les valeurs viennent de `%{SIZE}` et `%{GROUP}`. Un epoch non nul est conservé
+au début de `version`. Sans révision Debian, `release` reste vide ; un groupe
+inconnu reste vide. Aucune date d'installation n'est collectée.
 
-Le repli dpkg est automatique si RPM échoue. Si les deux collectes échouent,
-`rpms` reste vide, les autres mesures du nœud sont conservées et le script retourne
-2. Comme le format nodes ne contient pas de statut d'erreur par nœud, conserver
-les diagnostics console pour distinguer une collecte de paquets impossible.
-`checkpackages.sh` reste disponible pour une collecte indépendante.
+Le repli vers dpkg est automatique en cas d'erreur RPM. Si les deux collectes
+échouent, les mesures système sont conservées, `rpms` reste vide et le script
+retourne 2. Les paquets ne sont pas listés en console : seuls les nombres,
+les erreurs et le bilan sont affichés.
 
+### Serveurs et packages dans un seul visualiseur
 
-### Visualiseur nodes unifié
+Le fichier autonome **`visualizer/nodes.html`** lit ce JSON et propose un bandeau :
 
-Un seul fichier **`visualizer/nodes.html`** permet maintenant de consulter le JSON
-complet de `checknodes.sh` :
-
-- **Synthèse des serveurs** : blocs, RAM/swap et jauges filesystem ;
-- **Packages** : matrice des paquets de `nodes[].rpms`, une colonne par serveur ;
-- **Détail du serveur** : accessible depuis le nom, le bouton de la synthèse ou
+- **Synthèse des serveurs** : blocs et jauges RAM/swap/filesystems ;
+- **Packages** : une ligne par paquet, une colonne par serveur ;
+- **Détail serveur** : accessible par le nom, le bouton de la synthèse ou
   l'en-tête d'une colonne packages, avec retour à la vue précédente.
 
-Les filtres et la recherche facilitent la comparaison ; une liste de paquets vide
-ou absente est signalée comme inconnue. Il n'est plus nécessaire de produire ou
-charger un second JSON pour voir les packages de nodes.
-Les listes de paquets ne sont plus imprimées dans la console de `checknodes.sh`
-ni de `checkpackages.sh` ; seuls les nombres, bilans et erreurs y restent.
-Le visualiseur packages indépendant est conservé pour ses rapports spécifiques.
+Recherche, architecture et différences filtrent les listes exportées. Taille et
+groupe sont disponibles au survol des versions dans la matrice. Les filtres et
+la recherche sont conservés en revenant du détail. Les anciens rapports sont
+lisibles ; leurs tailles et groupes manquants ne sont pas inventés.
+Une liste vide ou manquante reste inconnue, et « Non listé » ne certifie pas une
+absence sur le serveur. Le fichier reste utilisable hors ligne, sans import.

@@ -119,28 +119,24 @@ usage() {
 }
 # Appelée dans collect_node_packages : variables de collecte partagées par portée Bash.
 collect_debian_packages() {
-    local output='' line status name full epoch version release arch rest tabs
+    local output='' line status name full version release arch size group rest tabs
     packages=''; separator=''; count=0; rc=0; error=''; manager=dpkg
-    if ! command -v dpkg-query >/dev/null 2>&1; then
-        error='Repli APT impossible : dpkg-query absent'; rc=2; return
-    fi
-    if ! output=$(LC_ALL=C dpkg-query -W -f='${db:Status-Status}\t${Package}\t${Version}\t${Architecture}\n'); then
+    if ! command -v dpkg-query >/dev/null 2>&1; then error='Repli APT impossible : dpkg-query absent'; rc=2; return; fi
+    if ! output=$(LC_ALL=C dpkg-query -W -f='${db:Status-Status}\t${Package}\t${Version}\t${Architecture}\t${Installed-Size}\t${Section}\n'); then
         error='Échec de lecture de la base dpkg'; rc=2; return
     fi
     while IFS= read -r line; do
         [[ -n $line ]] || continue
         rest=${line//$'\t'/}; tabs=$((${#line}-${#rest}))
-        IFS=$'\t' read -r status name full arch <<< "$line"
-        if [[ $tabs != 3 || -z $status || -z $name ]]; then
-            error='Réponse dpkg invalide ou incomplète'; rc=2; return
-        fi
+        IFS=$'\t' read -r status name full arch size group <<< "$line"
+        if [[ $tabs != 5 || -z $status || -z $name ]]; then error='Réponse dpkg invalide ou incomplète'; rc=2; return; fi
         [[ $status == installed ]] || continue
-        if [[ -z $full || -z $arch ]]; then error='Réponse dpkg invalide'; rc=2; return; fi
-        epoch=0; version=$full; release=''
-        if [[ $version == *:* ]]; then epoch=${version%%:*}; version=${version#*:}; fi
+        if [[ -z $full || -z $arch || ! $size =~ ^[0-9]{1,12}$ ]]; then error='Réponse dpkg invalide'; rc=2; return; fi
+        version=$full; release=''
         if [[ $version == *-* ]]; then release=${version##*-}; version=${version%-*}; fi
-        if [[ ! $epoch =~ ^[0-9]{1,9}$ || -z $version ]]; then error='Version Debian invalide'; rc=2; return; fi
-        packages+="$separator"'{"package_manager":'"$(json_string "$manager")"',"name":'"$(json_string "$name")"',"epoch":'"$(json_number "$epoch")"',"version":'"$(json_string "$version")"',"release":'"$(json_string "$release")"',"architecture":'"$(json_string "$arch")"',"version_full":'"$(json_string "$full")"',"installed_at_unix":null}'
+        [[ -n $version ]] || { error='Version Debian invalide'; rc=2; return; }
+        size=$((10#$size * 1024))
+        packages+="$separator"'{"name":'"$(json_string "$name")"',"version":'"$(json_string "$version")"',"release":'"$(json_string "$release")"',"arch":'"$(json_string "$arch")"',"size":'"$size"',"group":'"$(json_string "$group")"'}'
         separator=','; ((count+=1))
     done <<< "$output"
     if (( ! count )); then error='Inventaire dpkg vide : aucune collecte certifiée'; rc=2; fi
@@ -148,23 +144,25 @@ collect_debian_packages() {
 collect_node_packages() {
     local manager=rpm rpm_error='' fallback_used=false
     local output='' packages='' separator='' count=0 rc=0 error=''
-    local name epoch version release arch installed extra line tabs rest
+    local name epoch version release arch size group line tabs rest
     printf '\n=== Paquets RPM : %s ===\n' "${HOSTNAME:-serveur}"
     if ! command -v rpm >/dev/null 2>&1; then
         error='Commande rpm absente : inventaire RHEL impossible'; rc=2
-    elif output=$(LC_ALL=C rpm -qa --queryformat '%{NAME}\t%{EPOCHNUM}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\t%{INSTALLTIME}\n'); then
+    elif output=$(LC_ALL=C rpm -qa --queryformat '%{NAME}\t%{EPOCHNUM}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\t%{SIZE}\t%{GROUP}\n'); then
         if [[ -z $output ]]; then
             error='Inventaire RPM vide : aucune collecte certifiée'; rc=2
         else
             while IFS= read -r line; do
-                # Six champs non vides ; ne pas accepter une réponse tronquée.
+                # Sept champs RPM en entrée ; six champs normalisés en sortie.
                 rest=${line//$'\t'/}; tabs=$((${#line}-${#rest}))
-                IFS=$'\t' read -r name epoch version release arch installed extra <<< "$line"
-                if [[ $tabs != 5 || -z $name || -z $version || -z $release || -z $arch ||
-                      ! $epoch =~ ^[0-9]+$ || ! $installed =~ ^[0-9]+$ ]]; then
+                IFS=$'\t' read -r name epoch version release arch size group <<< "$line"
+                if [[ $tabs != 6 || -z $name || -z $version || -z $release || -z $arch ||
+                      ! $epoch =~ ^[0-9]{1,9}$ || ! $size =~ ^[0-9]{1,15}$ ]]; then
                     error='Réponse RPM invalide ou incomplète'; rc=2; break
                 fi
-                packages+="$separator"'{"package_manager":'"$(json_string "$manager")"',"name":'"$(json_string "$name")"',"epoch":'"$(json_number "$epoch")"',"version":'"$(json_string "$version")"',"release":'"$(json_string "$release")"',"architecture":'"$(json_string "$arch")"',"installed_at_unix":'"$(json_number "$installed")"'}'
+                [[ $epoch =~ ^0+$ ]] || version="$((10#$epoch)):$version"
+                [[ $group != '(none)' ]] || group=''
+                packages+="$separator"'{"name":'"$(json_string "$name")"',"version":'"$(json_string "$version")"',"release":'"$(json_string "$release")"',"arch":'"$(json_string "$arch")"',"size":'"$(json_number "$size")"',"group":'"$(json_string "$group")"'}'
                 separator=','; ((count+=1))
             done <<< "$output"
         fi
