@@ -347,3 +347,31 @@ dans les arguments). Les identifiants sont neufs par défaut, ou fournis avec
 `--id` et `--oid`. Le tableau `rpms` et les collections applicatives restent vides,
 comme dans le modèle fourni. Le détail du schéma, des unités et des erreurs est
 documenté dans [bin/DPI/README.md](bin/DPI/README.md).
+
+## Visualiseur nodes (DPI)
+
+Le fichier **`visualizer/nodes.html`** affiche les rapports de
+`bin/DPI/checknodes.sh`, ainsi que les documents ayant la même structure `nodes`.
+Livrer uniquement le HTML et le JSON, puis ouvrir le HTML dans un navigateur
+récent et sélectionner le rapport. Aucune installation ni connexion Internet.
+
+Il présente une fiche par nœud : identité/IP, date UTC, OS/JDK, uptime/charge,
+CPU, RAM/swap, interfaces réseau (octets cumulés), filesystems et processus Java.
+La recherche porte sur les informations des nœuds ; un filtre sélectionne un
+serveur. Les identifiants du document et le JSON de chaque nœud sont consultables.
+Le bouton « Imprimer / PDF » imprime les résultats actuellement affichés.
+
+Les entrées vides `{}` du modèle sont ignorées et comptabilisées. Les champs
+manquants sont affichés comme non renseignés. Le format ne contenant pas les
+statuts de collecte, ce visualiseur ne certifie pas qu'un relevé est complet.
+Les arguments Java éventuellement présents restent visibles : attention aux
+secrets lors du partage ou de l'impression.
+
+Le fichier est limité à 25 Mio et reste dans la mémoire de la page, sans envoi
+réseau ni stockage persistant. Le navigateur cloud bloque `file://` ; le HTML
+exact a été testé hors connexion. L'ouverture directe est à vérifier sur le poste
+client selon sa politique navigateur.
+
+```bash
+python3 tests/test_nodes_visualizer.py
+```

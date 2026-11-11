@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>CheckPlateforme DPI — Nœuds</title>
+<style>
+:root{color-scheme:light;--ink:#17283d;--muted:#53657a;--line:#dce4ed;--blue:#2159b5;--bg:#f3f6fa}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif}main{max-width:1240px;margin:auto;padding:32px 24px 64px}header{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:24px}.brand{font-weight:750;color:var(--blue);font-size:13px;letter-spacing:.1em}h1{font-size:30px;line-height:1.2;margin:8px 0}h2{font-size:21px;margin:0}h3{font-size:16px;margin:22px 0 8px}p{margin:8px 0}.muted{color:var(--muted)}button,.upload{font:inherit;border:1px solid var(--line);border-radius:8px;padding:10px 16px;background:white;color:var(--ink);cursor:pointer}button:hover,.upload:hover{border-color:var(--blue)}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #84b5ff;outline-offset:3px}.tabs{display:flex;gap:8px;margin-bottom:20px}.tabs button[aria-pressed=true]{background:var(--blue);color:white;border-color:var(--blue)}.load{padding:24px;border:1px dashed #9eafc3;border-radius:12px;background:white}.load input{max-width:100%}.load label{display:block;font-weight:650;margin-bottom:8px}.error{color:#9e2020;background:#fff0f0;padding:14px;border-radius:8px;margin:16px 0}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}.stat{background:white;border:1px solid var(--line);border-radius:10px;padding:16px}.stat strong{display:block;font-size:26px}.toolbar{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0}.toolbar label{display:flex;gap:8px;align-items:center}.toolbar input,.toolbar select{font:inherit;padding:9px 12px;border:1px solid #aebdcd;border-radius:6px;background:white}.toolbar input{min-width:260px}.server,.flowwrap{background:white;border:1px solid var(--line);border-radius:12px;margin:16px 0;padding:22px}.serverhead{display:flex;justify-content:space-between;align-items:center;gap:12px}.badge{display:inline-block;border-radius:20px;padding:4px 10px;font-size:13px;font-weight:650;white-space:nowrap}.ok{background:#e1f3e9;color:#12603b}.fail{background:#ffeded;color:#9c2424}.warn{background:#fff0d6;color:#795000}.neutral{background:#e8edf4;color:#42556c}.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}.fact{border-left:3px solid #c8d9f3;padding:4px 12px}.fact b{display:block}.tablebox{overflow:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{background:#f5f8fc;white-space:nowrap;color:var(--muted);font-weight:600}td{overflow-wrap:anywhere}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f5f8fc;padding:12px;border-radius:8px;font-size:13px}summary{cursor:pointer;font-weight:600;padding:8px 0}.empty{text-align:center;padding:36px;color:var(--muted)}footer{margin-top:28px;font-size:13px;color:var(--muted)}[hidden]{display:none!important}@media(max-width:700px){main{padding:20px 12px}.stats,.facts{grid-template-columns:repeat(2,1fr)}header{align-items:flex-start}h1{font-size:25px}.serverhead{align-items:flex-start}.toolbar label{flex-wrap:wrap}.toolbar input{min-width:0;width:100%}}@media print{body{background:white}main{max-width:none;padding:0}.tabs,.load,.toolbar,header button,footer{display:none}.server,.flowwrap{break-inside:avoid}details{display:block}.tablebox{overflow:visible}.stats{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body>
+<main>
+<header><div><div class="brand">CHECKPLATEFORME / DPI</div><h1>Vue des nœuds</h1><p class="muted">Système, Java, CPU, mémoire, réseau et disques.</p></div><button id="print" type="button">Imprimer / PDF</button></header>
+<section class="load"><label for="file">Ouvrir le JSON de checknodes.sh</label><input id="file" type="file" accept=".json,application/json"><p class="muted">Fichier HTML autonome. Lecture locale uniquement, sans installation ni envoi réseau.</p></section>
+<div id="error" class="error" role="alert" hidden></div>
+<section id="report" hidden><p id="filename" class="muted"></p><div id="stats" class="stats"></div><p id="notice" class="muted"></p><details><summary>Identifiants du document</summary><pre id="metadata"></pre></details>
+<div class="toolbar"><label>Serveur <select id="server"><option value="all">Tous les serveurs</option></select></label><label>Rechercher <input id="search" type="search" placeholder="Hôte, IP, Java, montage…"></label><button id="clear" type="button">Retirer le rapport</button></div><p id="count" class="muted" aria-live="polite"></p><div id="results"></div></section>
+<div id="welcome" class="empty">Sélectionnez votre fichier nodes.json pour consulter la plateforme.</div>
+<footer>Le format nodes ne contient pas de statut de collecte ni d’attendus. La présence d’un nœud ne garantit pas une collecte complète : consulter aussi les diagnostics et le code de retour du script. Les lignes de commande Java peuvent contenir des secrets.</footer>
+</main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);let report=null,filename='',generation=0;
+const object=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
+const text=x=>x===null||x===undefined||x===''?'Non renseigné':String(x);
+const numeric=x=>typeof x==='number'&&Number.isFinite(x)?x:null;
+const fmt=x=>new Intl.NumberFormat('fr-FR',{maximumFractionDigits:2}).format(x);
+function capacity(x){if(numeric(x)===null)return 'Non renseignée';const scale=x>=1048576?1048576:x>=1024?1024:1;return `${fmt(x/scale)} ${scale===1048576?'Gio':scale===1024?'Mio':'kio'}`;}
+function bytes(x){if(typeof x!=='string'||!/^\d+$/.test(x))return 'Non renseigné';return new Intl.NumberFormat('fr-FR').format(BigInt(x))+' octets';}
+function date(x){if(numeric(x)===null)return 'Non renseignée';const d=new Date(x*1000);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat('fr-FR',{dateStyle:'medium',timeStyle:'short',timeZone:'UTC'}).format(d)+' UTC':'Date invalide';}
+function uptime(x){if(typeof x!=='string'||!/^\d+(\.\d+)?$/.test(x))return 'Non renseigné';const n=Number(x);return `${Math.floor(n/86400)} j ${Math.floor(n%86400/3600)} h ${Math.floor(n%3600/60)} min (${x} s)`;}
+function el(tag,value,cls){const n=document.createElement(tag);if(value!==undefined)n.textContent=text(value);if(cls)n.className=cls;return n;}
+function table(headers,rows){const wrap=el('div',undefined,'tablebox'),t=el('table'),head=el('thead'),r=el('tr');for(const h of headers){const th=el('th',h);th.scope='col';r.append(th);}head.append(r);t.append(head);const body=el('tbody');for(const values of rows){const row=el('tr');for(const v of values)row.append(el('td',v));body.append(row);}t.append(body);wrap.append(t);return wrap;}
+function validate(data){
+ if(!object(data)||!Array.isArray(data.nodes))throw Error('Format nodes attendu : objet contenant un tableau nodes.');
+ for(const n of data.nodes){
+  if(!object(n))throw Error('Entrée de nœud invalide.');
+  if(Object.keys(n).length===0)continue;
+  if(typeof n.hostname!=='string')throw Error('Nom de serveur invalide.');
+  for(const key of ['system','cpu','memory'])if(n[key]!==undefined&&!object(n[key]))throw Error(`Objet ${key} invalide.`);
+  for(const key of ['network','disks'])if(n[key]!==undefined&&(!Array.isArray(n[key])||n[key].some(x=>!object(x))))throw Error(`Tableau ${key} invalide.`);
+  if(n.processes!==undefined&&(!Array.isArray(n.processes)||n.processes.some(x=>typeof x!=='string')))throw Error('Liste processes invalide.');
+ }
+ return data;
+}
+function fact(parent,label,value){const box=el('div',undefined,'fact');box.append(el('span',label,'muted'),el('b',value));parent.append(box);}
+function card(n){
+ const root=el('article',undefined,'server'),head=el('div',undefined,'serverhead');head.append(el('h2',n.hostname||'Hôte non renseigné'),el('span','Instantané système','badge neutral'));root.append(head);
+ root.append(el('p',`${text(n.fqdn)} · IP : ${text(n.ip)} · Domaine : ${text(n.domain)}`,'muted'),el('p',`Dernière collecte : ${date(n.lastUpdate)}`,'muted'));
+ const facts=el('div',undefined,'facts');fact(facts,'CPU logiques',text(n.cpu?.nbProc));fact(facts,'RAM totale',capacity(n.memory?.memTotal));fact(facts,'Swap total',capacity(n.memory?.swapTotal));fact(facts,'RAM utilisée (estimée)',capacity(n.memory?.memUsed));fact(facts,'RAM libre',capacity(n.memory?.memFree));fact(facts,'Swap utilisé',capacity(n.memory?.swapUsed));root.append(facts);
+ root.append(el('h3','Système et CPU'),table(['Information','Valeur'],[['Système',text(n.system?.versionRedHat)],['Noyau / architecture',text(n.system?.nameOS)],['Java dans PATH',text(n.system?.versionJDK)],['Durée de fonctionnement',uptime(n.system?.upTime)],['Charge (1 / 5 / 15 min)',text(n.system?.load)],['Modèle CPU',text(n.cpu?.model)],['Fréquence du premier CPU',n.cpu?.frqProc?`${n.cpu.frqProc} MHz`:'Non renseignée'],['BogoMIPS',text(n.cpu?.bogomips)],['Swap libre',capacity(n.memory?.swapFree)]]));
+ root.append(el('h3','Interfaces réseau'));
+ if(n.network?.length)root.append(table(['Interface','Émis (cumul)','Reçus (cumul)'],n.network.map(x=>[x.nom,bytes(x.tx),bytes(x.rx)])));else root.append(el('p','Aucune interface renseignée.','muted'));
+ root.append(el('h3','Systèmes de fichiers'));
+ if(n.disks?.length)root.append(table(['Montage','Périphérique','Taille totale','Utilisé','Disponible','Occupation'],n.disks.map(x=>[x.mount,x.name,capacity(x.total),capacity(x.used),capacity(x.available),text(x.percentUsed)])));else root.append(el('p','Aucun filesystem renseigné.','muted'));
+ root.append(el('h3',`Processus Java (${n.processes?.length||0})`));
+ if(n.processes?.length)root.append(table(['% mémoire · PID · utilisateur · commande'],n.processes.map(x=>[x])));else root.append(el('p','Aucun processus Java renseigné dans ce nœud. Ce champ peut être vide après un échec de collecte.','muted'));
+ const details=el('details');details.append(el('summary','JSON du nœud'),el('pre',JSON.stringify(n,null,2)));root.append(details);return root;
+}
+function render(){
+ $('report').hidden=!report;$('welcome').hidden=!!report;if(!report)return;
+ const nodes=report.nodes.filter(n=>Object.keys(n).length>0),empty=report.nodes.length-nodes.length;
+ $('filename').textContent=filename;$('metadata').textContent=JSON.stringify({_id:report._id??null,id:report.id??null},null,2);
+ $('notice').textContent=`Les statuts de réussite ou d’échec ne figurent pas dans ce format.${empty?` ${empty} entrée(s) vide(s) du modèle ignorée(s).`:''}`;
+ $('stats').replaceChildren();for(const [label,value] of [['Nœuds renseignés',nodes.length],['Processus Java listés',nodes.reduce((n,x)=>n+(x.processes?.length||0),0)],['Filesystems listés',nodes.reduce((n,x)=>n+(x.disks?.length||0),0)],['Interfaces listées',nodes.reduce((n,x)=>n+(x.network?.length||0),0)]]){const box=el('div',undefined,'stat');box.append(el('span',label,'muted'),el('strong',value));$('stats').append(box);}
+ const q=$('search').value.toLocaleLowerCase('fr'),selected=$('server').value;
+ const visible=nodes.filter((n,i)=>(selected==='all'||selected===String(i))&&JSON.stringify(n).toLocaleLowerCase('fr').includes(q));
+ $('count').textContent=`${visible.length} / ${nodes.length} nœud(s) affiché(s)`;$('results').replaceChildren();for(const n of visible)$('results').append(card(n));
+ if(!visible.length)$('results').append(el('p',nodes.length?'Aucun nœud ne correspond aux filtres.':'Ce rapport ne contient aucun nœud renseigné.','empty'));
+}
+$('file').addEventListener('change',async event=>{const file=event.target.files[0];if(!file)return;const ticket=++generation;try{if(file.size>25*1024*1024)throw Error('Fichier trop volumineux (limite : 25 Mio).');const data=validate(JSON.parse((await file.text()).replace(/^\uFEFF/,'')));if(ticket!==generation)return;report=data;filename=file.name;$('error').hidden=true;$('search').value='';$('server').replaceChildren();const all=el('option','Tous les serveurs');all.value='all';$('server').append(all);report.nodes.filter(n=>Object.keys(n).length>0).forEach((n,i)=>{const option=el('option',n.hostname||'Hôte non renseigné');option.value=String(i);$('server').append(option);});render();}catch(error){if(ticket===generation){$('error').textContent=`Impossible de lire le rapport : ${error.message}`;$('error').hidden=false;}}finally{if(ticket===generation)$('file').value='';}});
+$('server').addEventListener('change',render);$('search').addEventListener('input',render);$('clear').addEventListener('click',()=>{generation++;report=null;$('error').hidden=true;render();});$('print').addEventListener('click',()=>window.print());
+</script>
+</body>
+</html>

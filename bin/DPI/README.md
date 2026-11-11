@@ -190,4 +190,9 @@ inaccessibles sont omises et signalées en console. Pour conserver le schéma du
 modèle, aucun champ d'erreur supplémentaire ni code global n'est inséré dans le
 JSON : conserver également le code de retour et les diagnostics console.
 Les objets `{}` de remplissage du modèle ne sont pas reproduits.
-Ce format n'est pas pris en charge par les visualiseurs actuels.
+Le visualiseur autonome `visualizer/nodes.html` affiche ce format. Ouvrir le
+HTML, puis sélectionner le JSON : fiches système/CPU/mémoire, réseau, disques,
+processus Java, recherche, filtre par serveur et impression PDF. Aucun import ni
+accès réseau n'est nécessaire. Les entrées `{}` du modèle sont ignorées.
+Le visualiseur ne peut pas déduire les échecs ou les cibles omises depuis le JSON :
+conserver les diagnostics console et le code retour du script.
