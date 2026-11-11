@@ -137,6 +137,28 @@ class PackageVisualizerTests(unittest.TestCase):
             self.assertFalse(errors, errors)
             browser.close()
 
+    def test_dpkg_report_with_unknown_install_date(self):
+        with tempfile.TemporaryDirectory() as directory, sync_playwright() as pw:
+            root = Path(directory)
+            packages = [dict(name='native', epoch=0, version='1.0', release='', architecture='all',
+                             version_full='1.0', installed_at_unix=None)]
+            report = root / 'dpkg.json'
+            report.write_text(json.dumps({'package_inventory': [dict(target='ubuntu01', exit_code=0,
+                data=dict(hostname='ubuntu01', package_manager='dpkg', package_count=1, packages=packages,
+                          fallback_used=True, rpm_error='rpm absent', error=None, exit_code=0))], 'exit_code': 0}))
+            browser = pw.chromium.launch(executable_path=shutil.which('chromium'), args=['--no-sandbox'])
+            page = browser.new_page()
+            page.context.set_offline(True)
+            page.set_content(HTML.read_text())
+            page.locator('#file').set_input_files(str(report))
+            page.wait_for_selector('.matrix')
+            self.assertIn('dpkg', page.locator('.matrix thead').inner_text())
+            self.assertEqual(page.locator('.version').inner_text(), '1.0 [all]')
+            page.locator('#detail-view').click()
+            self.assertIn('Non disponible (dpkg)', page.locator('tbody').inner_text())
+            self.assertIn('rpm absent', page.locator('.server').inner_text())
+            browser.close()
+
     def test_empty_report(self):
         with tempfile.TemporaryDirectory() as directory, sync_playwright() as pw:
             report = Path(directory) / 'empty.json'

@@ -13,7 +13,7 @@
 </head>
 <body>
 <main>
-<header><div><div class="brand">CHECKPLATEFORME / DPI</div><h1>Packages installés</h1><p class="muted">Versions RPM de la plateforme, comparées entre serveurs.</p></div><button id="print" type="button">Imprimer / PDF</button></header>
+<header><div><div class="brand">CHECKPLATEFORME / DPI</div><h1>Packages installés</h1><p class="muted">Versions des paquets de la plateforme, comparées entre serveurs.</p></div><button id="print" type="button">Imprimer / PDF</button></header>
 <section class="load"><label for="file">Ouvrir le rapport JSON de checkpackages.sh</label><input id="file" type="file" accept=".json,application/json"><p class="muted">Un fichier HTML autonome. Lecture locale, sans envoi réseau ni installation.</p></section>
 <div id="error" class="error" role="alert" hidden></div>
 <section id="report" hidden><p id="filename" class="muted"></p><div id="stats" class="stats"></div>
@@ -21,7 +21,7 @@
 <div class="toolbar"><label id="comparison-filter">Comparaison <select id="difference"><option value="all">Tous les RPM</option><option value="different">Différences et absences</option><option value="unknown">Comparaison incomplète</option></select></label><label>Serveur <select id="server"><option value="all">Tous les serveurs</option></select></label><label>Architecture <select id="arch"><option value="all">Toutes</option></select></label><label>Rechercher <input id="search" type="search" placeholder="Nom, version, release…"></label><label>Collecte <select id="status"><option value="all">Tous les résultats</option><option value="issues">Erreurs uniquement</option></select></label><button id="clear" type="button">Retirer le rapport</button></div>
 <p id="count" class="muted" aria-live="polite"></p><div id="results"></div></section>
 <div id="welcome" class="empty">Sélectionnez un rapport packages pour consulter l’inventaire de livraison.</div>
-<footer>Ce rapport décrit les paquets enregistrés dans la base RPM au moment de la collecte. Il ne constitue pas une analyse de vulnérabilités et ne recense pas les logiciels installés hors RPM. Les versions et architectures multiples sont conservées.</footer>
+<footer>Ce rapport décrit les paquets enregistrés dans la base RPM ou dpkg au moment de la collecte. Il ne constitue pas une analyse de vulnérabilités et ne recense pas les logiciels installés hors de ces gestionnaires. Les versions et architectures multiples sont conservées.</footer>
 </main>
 <script>
 'use strict';
@@ -39,14 +39,14 @@ function validate(data){
   if(!object(s)||typeof s.target!=='string'||!nonnegative(s.exit_code)||!(s.data===null||object(s.data)))throw Error('Entrée serveur invalide.');
   if(s.data===null)continue;
   const d=s.data;
-  if(typeof d.hostname!=='string'||d.package_manager!=='rpm'||!nonnegative(d.package_count)||!Array.isArray(d.packages)||d.package_count!==d.packages.length||!nonnegative(d.exit_code)||!(d.error===null||typeof d.error==='string'))throw Error(`Inventaire incomplet ou invalide pour ${s.target}.`);
+  if(typeof d.hostname!=='string'||!['rpm','dpkg'].includes(d.package_manager)||!nonnegative(d.package_count)||!Array.isArray(d.packages)||d.package_count!==d.packages.length||!nonnegative(d.exit_code)||!(d.error===null||typeof d.error==='string'))throw Error(`Inventaire incomplet ou invalide pour ${s.target}.`);
   for(const p of d.packages){
-   if(!object(p)||!['name','version','release','architecture'].every(k=>typeof p[k]==='string'&&p[k].length>0)||!nonnegative(p.epoch)||!nonnegative(p.installed_at_unix))throw Error(`Entrée package invalide pour ${s.target}.`);
+   if(!object(p)||!['name','version','architecture'].every(k=>typeof p[k]==='string'&&p[k].length>0)||typeof p.release!=='string'||(d.package_manager==='rpm'&&p.release.length===0)||!nonnegative(p.epoch)||!(nonnegative(p.installed_at_unix)||(d.package_manager==='dpkg'&&p.installed_at_unix===null))||(p.version_full!==undefined&&typeof p.version_full!=='string'))throw Error(`Entrée package invalide pour ${s.target}.`);
   }
  }
  return data;
 }
-function installDate(value){if(value===0)return 'Non renseignée (0)';const date=new Date(value*1000);if(!Number.isFinite(date.getTime()))return `Horodatage invalide (${value})`;return new Intl.DateTimeFormat('fr-FR',{dateStyle:'medium',timeStyle:'short',timeZone:'UTC'}).format(date)+' UTC';}
+function installDate(value){if(value===null)return 'Non disponible (dpkg)';if(value===0)return 'Non renseignée (0)';const date=new Date(value*1000);if(!Number.isFinite(date.getTime()))return `Horodatage invalide (${value})`;return new Intl.DateTimeFormat('fr-FR',{dateStyle:'medium',timeStyle:'short',timeZone:'UTC'}).format(date)+' UTC';}
 function selectOptions(id,options,all){const select=$(id);select.replaceChildren();for(const [value,label] of [['all',all],...options]){const option=node('option',label);option.value=value;select.append(option);}}
 function resetFilters(){
  $('search').value='';$('status').value='all';$('difference').value='all';matrixExpanded=false;expanded.clear();
@@ -63,10 +63,10 @@ function matrixRender(servers){
  const selected=$('server').value,architecture=$('arch').value,query=$('search').value.trim().toLocaleLowerCase('fr');
  const columns=servers.map((s,i)=>({s,i})).filter(({s,i})=>(selected==='all'||selected===String(i))&&($('status').value!=='issues'||issue(s)));
  const names=new Set(),maps=columns.map(({s})=>{const m=new Map();for(const p of s.data?.packages||[]){if(architecture!=='all'&&p.architecture!==architecture)continue;if(!m.has(p.name))m.set(p.name,[]);m.get(p.name).push(p);names.add(p.name);}return m;});
- const fullVersion=p=>`${p.epoch}:${p.version}-${p.release} [${p.architecture}]`;
+ const fullVersion=p=>`${p.version_full??`${p.epoch}:${p.version}${p.release?'-'+p.release:''}`} [${p.architecture}]`;
  const rows=[...names].sort((a,b)=>a.localeCompare(b)).map(name=>{
   const entries=maps.map(m=>[...(m.get(name)||[])].sort((a,b)=>fullVersion(a).localeCompare(fullVersion(b))));
-  const signatures=entries.map(list=>list.map(fullVersion).join('\n'));
+  const signatures=entries.map((list,i)=>list.length?columns[i].s.data.package_manager+':'+list.map(fullVersion).join('\n'):'');
   const known=columns.map(({s},i)=>!issue(s)?signatures[i]:null).filter(x=>x!==null);
   const different=new Set(known).size>1;
   const incomplete=columns.some(({s})=>issue(s))||known.length<2;
@@ -76,7 +76,7 @@ function matrixRender(servers){
  results.append(node('p','Une ligne par RPM, une colonne par serveur. Les cellules conservent toutes les versions et architectures. « Absent » signifie absent d’une collecte réussie ; une erreur de collecte signifie « inconnu ».','legend'));
  if(!columns.length){results.append(node('p',servers.length?'Aucun serveur ne correspond aux filtres.':'Ce rapport ne contient aucun serveur.','empty'));$('count').textContent='0 serveur affiché';return;}
  const wrap=node('div',undefined,'matrixbox');wrap.tabIndex=0;wrap.setAttribute('role','region');wrap.setAttribute('aria-label','Comparaison des versions RPM par serveur');const table=node('table',undefined,'matrix'),head=node('thead'),tr=node('tr'),corner=node('th','RPM');corner.scope='col';tr.append(corner);
- for(const {s} of columns){const th=node('th',s.target);th.scope='col';const statusLabel=issue(s)?'Collecte incomplète / indisponible':'Collecte réussie';th.append(node('span',statusLabel,'column-status'));th.title=s.data?.error||statusLabel;tr.append(th);}head.append(tr);table.append(head);
+ for(const {s} of columns){const th=node('th',s.target);th.scope='col';const statusLabel=(issue(s)?'Collecte incomplète / indisponible':'Collecte réussie')+(s.data?' · '+s.data.package_manager:'');th.append(node('span',statusLabel,'column-status'));th.title=s.data?.error||statusLabel;tr.append(th);}head.append(tr);table.append(head);
  const body=node('tbody'),shown=matrixExpanded?rows:rows.slice(0,100);
  for(const row of shown){const r=node('tr',undefined,row.different?'different':''),name=node('th',row.name);name.scope='row';name.title=row.different?'Versions ou présence différentes entre collectes réussies':row.incomplete?'Comparaison incomplète':'Même inventaire pour ce RPM';r.append(name);
   columns.forEach(({s},i)=>{const td=node('td');if(row.entries[i].length){for(const p of row.entries[i])td.append(node('span',fullVersion(p),'version'));if(issue(s))td.append(node('span','Inventaire partiel','unknown'));}else td.append(node('span',issue(s)?'Inconnu (collecte en erreur)':'Absent',issue(s)?'unknown':'absent'));r.append(td);});body.append(r);
@@ -108,7 +108,8 @@ function render(){
   const code=s.exit_code!==0?s.exit_code:s.data?.exit_code||0;
   head.append(node('h2',s.target),issue(s)?badge(`Collecte à examiner (code ${code})`,'warn'):badge(...status(0)));card.append(head);
   if(s.data===null){card.append(node('p','Collecte indisponible. Consulter les diagnostics SSH de la livraison.','error'));results.append(card);return;}
-  card.append(node('p',`Hôte : ${s.data.hostname} · ${s.data.package_count} package(s) relevé(s)`,'muted'));
+  card.append(node('p',`Hôte : ${s.data.hostname} · Gestionnaire : ${s.data.package_manager} · ${s.data.package_count} package(s) relevé(s)`,'muted'));
+  if(s.data.fallback_used)card.append(node('p','Repli APT/dpkg utilisé : '+(s.data.rpm_error||'échec RPM'),'muted'));
   if(s.data.error)card.append(node('p',s.data.error,'error'));
   if(!packages.length){card.append(node('p',issue(s)?'Aucun inventaire exploitable pour ce serveur.':'Aucun package dans ce rapport.','muted'));}
   else if(!matches.length){card.append(node('p','Aucun package ne correspond aux filtres.','muted'));}

@@ -200,3 +200,32 @@ Recherche, filtre par serveur, retour à la synthèse et impression PDF sont dis
 accès réseau n'est nécessaire. Les entrées `{}` du modèle sont ignorées.
 Le visualiseur ne peut pas déduire les échecs ou les cibles omises depuis le JSON :
 conserver les diagnostics console et le code retour du script.
+
+### Repli optionnel APT / Debian / Ubuntu
+
+```bash
+bash bin/DPI/checkpackages.sh --localhost --apt-fallback --json packages-local.json
+bash bin/DPI/checkpackages.sh --inventory examples/serveurs.csv --apt-fallback --json packages-parc.json
+```
+
+Sans `--apt-fallback`, seul RPM est interrogé. Avec l'option, si RPM est absent,
+échoue, retourne une liste vide ou invalide, la collecte utilise `dpkg-query`
+pour les paquets gérés par APT. Seuls les paquets à l'état `installed` sont retenus,
+pas les paquets supprimés ayant laissé des fichiers de configuration.
+Ce repli n'installe rien, ne lance pas `apt update` et ne nécessite pas sudo.
+L'option est transmise à chaque cible SSH. Si RPM réussit, dpkg n'est pas interrogé.
+
+Le JSON conserve `package_inventory`, avec `package_manager: "dpkg"` pour le repli,
+`fallback_used: true` et `rpm_error` expliquant le problème RPM. Une collecte dpkg
+réussie donne `error: null` et un code 0 ; un échec des deux collectes donne 2.
+Les listes partielles RPM et dpkg ne sont jamais mélangées.
+
+Pour un paquet Debian, `version_full` conserve la version Debian exacte, `epoch`,
+`version` et `release` en donnent les composantes. Sans révision Debian, `release`
+est une chaîne vide. `installed_at_unix` vaut `null` : `dpkg-query` ne fournit pas
+une date fiable d'installation. Aucun horodatage n'est inventé.
+
+`visualizer/packages.html` lit les deux gestionnaires, les indique dans chaque
+colonne/fiche et affiche la version Debian complète. Les dates dpkg sont indiquées
+comme non disponibles. Les comparaisons distinguent RPM et dpkg ; elles ne font
+pas d'équivalence entre paquets ou architectures de distributions différentes.

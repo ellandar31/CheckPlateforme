@@ -424,3 +424,18 @@ Les dates d'installation ne participent pas à la comparaison.
 Les en-têtes et noms de RPM restent visibles lors du défilement du tableau.
 Les premières 100 lignes sont affichées, avec un bouton pour afficher toute la
 matrice filtrée avant impression. La vue reste autonome et utilisable hors ligne.
+
+### Inventaire packages avec repli APT
+
+L'option **`--apt-fallback`** active le repli vers les paquets Debian/Ubuntu si
+la collecte RPM est indisponible ou en erreur :
+
+```bash
+bash bin/DPI/checkpackages.sh --inventory examples/serveurs.csv --apt-fallback --json packages-parc.json
+```
+
+Le script utilise `dpkg-query` en lecture seule, sans installation ni commande
+APT de mise à jour. Le JSON indique le gestionnaire réellement utilisé et la
+raison du repli. Le visualiseur packages prend en charge RPM et dpkg, y compris
+les versions Debian sans révision et l'absence de date d'installation.
+Sans cette option, la collecte reste uniquement RPM.

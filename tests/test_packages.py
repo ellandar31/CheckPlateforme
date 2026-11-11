@@ -69,6 +69,62 @@ class PackageTests(unittest.TestCase):
                     self.assertEqual(len(data['packages']), count)
                     self.assertEqual(data['error'] is None, code == 0)
 
+    def test_optional_apt_fallback_and_debian_versions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rpm = root / 'rpm'
+            rpm.write_text('#!/bin/bash\necho "RPM failed" >&2; exit 1\n')
+            rpm.chmod(0o755)
+            dpkg = root / 'dpkg-query'
+            dpkg.write_text("#!/bin/bash\nprintf 'installed\\tbash\\t2:5.2-6ubuntu1\\tamd64\\ninstalled\\tnative\\t1.0\\tall\\nconfig-files\\tremoved\\t1.0-1\\tamd64\\n'\n")
+            dpkg.chmod(0o755)
+            ssh = root / 'ssh'
+            ssh.write_text('#!/bin/bash\nbash -s\n')
+            ssh.chmod(0o755)
+            inventory = root / 'hosts.csv'
+            inventory.write_text('remote01;audit;22\n')
+            env = dict(os.environ, PATH=directory + ':' + os.environ['PATH'])
+            for fallback in (False, True):
+                report = root / f'{fallback}.json'
+                command = ['bash', str(SCRIPT), '--inventory', str(inventory), '--json', str(report)]
+                if fallback:
+                    command.append('--apt-fallback')
+                result = subprocess.run(command, env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0 if fallback else 2)
+                data = json.loads(report.read_text())['package_inventory'][0]['data']
+                self.assertEqual(data['package_manager'], 'dpkg' if fallback else 'rpm')
+                if fallback:
+                    self.assertTrue(data['fallback_used'])
+                    self.assertTrue(data['rpm_error'])
+                    self.assertIsNone(data['error'])
+                    self.assertEqual(data['package_count'], 2)
+                    package = data['packages'][0]
+                    self.assertEqual(package['epoch'], 2)
+                    self.assertEqual(package['version'], '5.2')
+                    self.assertEqual(package['release'], '6ubuntu1')
+                    self.assertEqual(package['version_full'], '2:5.2-6ubuntu1')
+                    self.assertIsNone(package['installed_at_unix'])
+                    self.assertEqual(data['packages'][1]['release'], '')
+
+    def test_apt_failure_is_not_a_successful_empty_inventory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rpm = root / 'rpm'
+            rpm.write_text('#!/bin/bash\nexit 1\n')
+            rpm.chmod(0o755)
+            for index, body in enumerate(['exit 1', 'exit 0', "printf 'invalid\\n'"]):
+                dpkg = root / 'dpkg-query'
+                dpkg.write_text('#!/bin/bash\n' + body + '\n')
+                dpkg.chmod(0o755)
+                report = root / f'{index}.json'
+                result = subprocess.run(['bash', str(SCRIPT), '--localhost', '--apt-fallback',
+                                         '--json', str(report)], capture_output=True, text=True,
+                                        env=dict(os.environ, PATH=directory + ':' + os.environ['PATH']))
+                self.assertEqual(result.returncode, 2)
+                data = json.loads(report.read_text())['package_inventory'][0]['data']
+                self.assertEqual(data['packages'], [])
+                self.assertTrue(data['error'])
+
     def test_missing_rpm(self):
         source = SCRIPT.read_text().rsplit('main "$@"', 1)[0]
         # Aucun accès aux exécutables : la collecte ne doit pas annoncer un succès vide.
