@@ -201,19 +201,20 @@ accès réseau n'est nécessaire. Les entrées `{}` du modèle sont ignorées.
 Le visualiseur ne peut pas déduire les échecs ou les cibles omises depuis le JSON :
 conserver les diagnostics console et le code retour du script.
 
-### Repli optionnel APT / Debian / Ubuntu
+### Repli automatique APT / Debian / Ubuntu
 
 ```bash
-bash bin/DPI/checkpackages.sh --localhost --apt-fallback --json packages-local.json
-bash bin/DPI/checkpackages.sh --inventory examples/serveurs.csv --apt-fallback --json packages-parc.json
+bash bin/DPI/checkpackages.sh --localhost --json packages-local.json
+bash bin/DPI/checkpackages.sh --inventory examples/serveurs.csv --json packages-parc.json
 ```
 
-Sans `--apt-fallback`, seul RPM est interrogé. Avec l'option, si RPM est absent,
-échoue, retourne une liste vide ou invalide, la collecte utilise `dpkg-query`
+RPM est interrogé en premier. S'il est absent, échoue ou retourne une liste
+vide ou invalide, la collecte utilise automatiquement `dpkg-query`
 pour les paquets gérés par APT. Seuls les paquets à l'état `installed` sont retenus,
 pas les paquets supprimés ayant laissé des fichiers de configuration.
 Ce repli n'installe rien, ne lance pas `apt update` et ne nécessite pas sudo.
-L'option est transmise à chaque cible SSH. Si RPM réussit, dpkg n'est pas interrogé.
+Ce comportement s'applique en local et sur chaque cible SSH. Si RPM réussit,
+dpkg n'est pas interrogé. L'ancienne option `--apt-fallback` est retirée.
 
 Le JSON conserve `package_inventory`, avec `package_manager: "dpkg"` pour le repli,
 `fallback_used: true` et `rpm_error` expliquant le problème RPM. Une collecte dpkg

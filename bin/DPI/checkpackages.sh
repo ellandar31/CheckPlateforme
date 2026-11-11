@@ -87,7 +87,7 @@ load_inventory() {
     ((${#hosts[@]})) || { printf 'ERREUR Inventaire vide\n' >&2; return 2; }
 }
 usage() {
-    printf 'Usage : %s (--localhost | --inventory SERVEURS.csv) [--json RAPPORT.json] [--apt-fallback]\n' "$0"
+    printf 'Usage : %s (--localhost | --inventory SERVEURS.csv) [--json RAPPORT.json]\n' "$0"
 }
 # Appelée dans collect_packages : variables de collecte partagées par portée Bash.
 collect_debian_packages() {
@@ -120,7 +120,7 @@ collect_debian_packages() {
     if (( ! count )); then error='Inventaire dpkg vide : aucune collecte certifiée'; rc=2; fi
 }
 collect_packages() {
-    local allow_apt=${1:-0} manager=rpm rpm_error='' fallback_used=false
+    local manager=rpm rpm_error='' fallback_used=false
     local output='' packages='' separator='' count=0 rc=0 error=''
     local name epoch version release arch installed extra line tabs rest
     printf '\n=== Paquets RPM : %s ===\n' "${HOSTNAME:-serveur}"
@@ -147,7 +147,7 @@ collect_packages() {
     else
         error='Échec de lecture de la base RPM'; rc=2
     fi
-    if ((rc && allow_apt)); then
+    if ((rc)); then
         rpm_error=$error; fallback_used=true
         printf 'AVERTISSEMENT RPM : %s ; repli vers les paquets APT/dpkg\n' "$rpm_error"
         collect_debian_packages
@@ -170,14 +170,12 @@ collect_packages() {
     return "$rc"
 }
 main() {
-    local allow_apt=0
     local mode='' inventory='' report='rapport-packages.json' i data rc result=0 entries='' separator='' payload
     local -a hosts=() users=() ports=() options=()
     while (( $# )); do
         case "$1" in
             --localhost) [[ -z $mode ]] || { usage >&2; return 2; }; mode=local; shift ;;
             --inventory) [[ -z $mode && $# -ge 2 && -n $2 ]] || { usage >&2; return 2; }; mode=remote; inventory=$2; shift 2 ;;
-            --apt-fallback) allow_apt=1; shift ;;
             --json) [[ $# -ge 2 && -n $2 ]] || { usage >&2; return 2; }; report=$2; shift 2 ;;
             -h|--help) usage; return 0 ;;
             *) usage >&2; return 2 ;;
@@ -196,12 +194,12 @@ main() {
         printf '\nCible : %s\n' "${hosts[i]}"
         case "${hosts[i]}" in
             localhost|127.0.0.1|::1)
-                data=$(collect_packages "$allow_apt" 3>&1 1>&2); rc=$? ;;
+                data=$(collect_packages 3>&1 1>&2); rc=$? ;;
             *)
                 options=(-T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -p "${ports[i]}")
                 [[ -z ${users[i]} ]] || options+=(-l "${users[i]}")
                 payload="$(declare -f json_string json_number collect_debian_packages collect_packages)"$'\n'
-                printf -v payload '%scollect_packages %q 3>&1 1>&2\n' "$payload" "$allow_apt"
+                payload+=$'collect_packages 3>&1 1>&2\n'
                 data=$(ssh "${options[@]}" "${hosts[i]}" 'bash -s' <<< "$payload"); rc=$?
                 case "$rc" in 0|2) ;; *) data='' ;; esac ;;
         esac

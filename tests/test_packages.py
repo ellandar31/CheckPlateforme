@@ -54,6 +54,9 @@ class PackageTests(unittest.TestCase):
                  ("printf 'pkg\\t0\\t1\\t1.el9\\tnoarch\\t0\\nbroken\\n'", 2, 0)]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            dpkg = root / 'dpkg-query'
+            dpkg.write_text('#!/bin/bash\nexit 1\n')
+            dpkg.chmod(0o755)
             for index, (body, code, count) in enumerate(cases):
                 with self.subTest(body=body):
                     rpm = root / 'rpm'
@@ -69,7 +72,7 @@ class PackageTests(unittest.TestCase):
                     self.assertEqual(len(data['packages']), count)
                     self.assertEqual(data['error'] is None, code == 0)
 
-    def test_optional_apt_fallback_and_debian_versions(self):
+    def test_automatic_apt_fallback_and_debian_versions(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             rpm = root / 'rpm'
@@ -84,27 +87,25 @@ class PackageTests(unittest.TestCase):
             inventory = root / 'hosts.csv'
             inventory.write_text('remote01;audit;22\n')
             env = dict(os.environ, PATH=directory + ':' + os.environ['PATH'])
-            for fallback in (False, True):
-                report = root / f'{fallback}.json'
-                command = ['bash', str(SCRIPT), '--inventory', str(inventory), '--json', str(report)]
-                if fallback:
-                    command.append('--apt-fallback')
+            for remote in (False, True):
+                report = root / f'{remote}.json'
+                command = ['bash', str(SCRIPT), '--json', str(report)]
+                command += ['--inventory', str(inventory)] if remote else ['--localhost']
                 result = subprocess.run(command, env=env, capture_output=True, text=True)
-                self.assertEqual(result.returncode, 0 if fallback else 2)
+                self.assertEqual(result.returncode, 0)
                 data = json.loads(report.read_text())['package_inventory'][0]['data']
-                self.assertEqual(data['package_manager'], 'dpkg' if fallback else 'rpm')
-                if fallback:
-                    self.assertTrue(data['fallback_used'])
-                    self.assertTrue(data['rpm_error'])
-                    self.assertIsNone(data['error'])
-                    self.assertEqual(data['package_count'], 2)
-                    package = data['packages'][0]
-                    self.assertEqual(package['epoch'], 2)
-                    self.assertEqual(package['version'], '5.2')
-                    self.assertEqual(package['release'], '6ubuntu1')
-                    self.assertEqual(package['version_full'], '2:5.2-6ubuntu1')
-                    self.assertIsNone(package['installed_at_unix'])
-                    self.assertEqual(data['packages'][1]['release'], '')
+                self.assertEqual(data['package_manager'], 'dpkg')
+                self.assertTrue(data['fallback_used'])
+                self.assertTrue(data['rpm_error'])
+                self.assertIsNone(data['error'])
+                self.assertEqual(data['package_count'], 2)
+                package = data['packages'][0]
+                self.assertEqual(package['epoch'], 2)
+                self.assertEqual(package['version'], '5.2')
+                self.assertEqual(package['release'], '6ubuntu1')
+                self.assertEqual(package['version_full'], '2:5.2-6ubuntu1')
+                self.assertIsNone(package['installed_at_unix'])
+                self.assertEqual(data['packages'][1]['release'], '')
 
     def test_apt_failure_is_not_a_successful_empty_inventory(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -117,7 +118,7 @@ class PackageTests(unittest.TestCase):
                 dpkg.write_text('#!/bin/bash\n' + body + '\n')
                 dpkg.chmod(0o755)
                 report = root / f'{index}.json'
-                result = subprocess.run(['bash', str(SCRIPT), '--localhost', '--apt-fallback',
+                result = subprocess.run(['bash', str(SCRIPT), '--localhost',
                                          '--json', str(report)], capture_output=True, text=True,
                                         env=dict(os.environ, PATH=directory + ':' + os.environ['PATH']))
                 self.assertEqual(result.returncode, 2)
@@ -131,7 +132,7 @@ class PackageTests(unittest.TestCase):
         result = subprocess.run(['/bin/bash', '-c', source + '\nPATH=/nonexistent\ncollect_packages 3>&1 1>&2'],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 2)
-        self.assertIn('rpm absente', json.loads(result.stdout)['error'])
+        self.assertIn('rpm absente', json.loads(result.stdout)['rpm_error'])
 
 
 if __name__ == '__main__':
