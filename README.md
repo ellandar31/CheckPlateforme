@@ -62,7 +62,9 @@ sans paquet supplémentaire. df peut attendre sur un montage réseau défaillant
 
 ```bash
 bash -n bin/checkplateforme.sh
-bash bin/checkplateforme.sh --help
+bash -n bin/checkflux.sh
+bash -n bin/lib/common.sh
+python3 tests/test_json.py
 ```
 
 Valider les contrôles complets sur une VM RHEL démarrée avec systemd.
@@ -70,7 +72,7 @@ Un conteneur Linux ne remplace pas ce test.
 
 ## Rapport JSON
 
-Chaque exécution produit `rapport.json` dans le répertoire courant, en plus de
+Chaque exécution de `checkplateforme.sh` produit `rapport.json` dans le répertoire courant, en plus de
 l'affichage console. Choisir un autre fichier avec `--json` :
 
 ```bash
@@ -106,14 +108,19 @@ Pour une cible distante dont la clé SSH est inconnue, vérifier son empreinte
 auprès de l'administrateur, puis enregistrer la clé avec une première connexion
 SSH interactive. Le contrôle strict des clés reste activé.
 
-## Matrice de flux réseau (optionnelle)
+## Contrôle des flux réseau
 
-Sans `--flows`, aucun test de flux n'est effectué et le tableau JSON `flows`
-est vide. Pour ajouter ces tests aux contrôles de plateforme :
+Le script `bin/checkflux.sh` est indépendant de `checkplateforme.sh` : il ne
+collecte ni CPU, ni mémoire, ni filesystems, ni état systemd.
+La matrice `--flows` est obligatoire pour ce script. Son exécution reste
+facultative : ne lancer que `checkplateforme.sh` pour contrôler la plateforme.
+L’ancienne option `checkplateforme.sh --flows` est retirée.
+
+Exécuter les flux séparément :
 
 ```bash
-bash bin/checkplateforme.sh --localhost --flows flux-local.csv --json local-flux.json
-bash bin/checkplateforme.sh --inventory examples/serveurs.csv --flows examples/flux.csv --json parc-flux.json
+bash bin/checkflux.sh --localhost --flows flux-local.csv --json local-flux.json
+bash bin/checkflux.sh --inventory examples/serveurs.csv --flows examples/flux.csv --json parc-flux.json
 ```
 
 La matrice CSV utilise le séparateur `;` et comporte cinq colonnes, avec en-tête facultatif :
@@ -153,17 +160,19 @@ confirmer l'ouverture du flux. Aucun succès UDP n'est annoncé par défaut.
 
 Un échec de connectivité contribue au code global **1** ; un test indéterminé,
 un outil manquant ou une erreur d'exécution contribue au code **2**.
-Les erreurs de plateforme et de flux sont agrégées (2 prioritaire sur 1).
+Le rapport par défaut est `rapport-flux.json`, avec uniquement `flows` et
+`exit_code`. Les codes retour de la plateforme et des flux sont indépendants :
+un système dégradé n’affecte pas le résultat des tests réseau.
+Le code 2 reste prioritaire sur 1 dans chaque rapport.
 
 ## Attendus par serveur (optionnels)
 
 L'option `--expectations` compare les mesures aux exigences de livraison, sans
-installation supplémentaire. Elle est indépendante de `--flows` et peut être
-utilisée seule ou avec la matrice réseau :
+installation supplémentaire. Elle appartient uniquement au script plateforme :
 
 ```bash
 bash bin/checkplateforme.sh --localhost --expectations examples/attentes.csv --json conformite.json
-bash bin/checkplateforme.sh --inventory exemples-parc.csv --expectations attentes-parc.csv --flows flux.csv --json parc.json
+bash bin/checkplateforme.sh --inventory exemples-parc.csv --expectations attentes-parc.csv --json parc.json
 ```
 
 CSV avec séparateur `;`, de six colonnes, avec en-tête facultatif :
@@ -201,3 +210,23 @@ au code **2**, qui reste prioritaire. Sans l'option, `expectations` est vide.
 La RAM mesurée est la mémoire utilisable par Linux (`MemTotal`), qui peut être
 légèrement inférieure à la RAM physique allouée. Prévoir cette différence dans
 le seuil de livraison, plutôt qu'une égalité stricte avec la capacité nominale.
+
+## Organisation des scripts
+
+```text
+bin/
+├── checkplateforme.sh   # Collecte et comparaison aux attendus
+├── checkflux.sh         # Tests des flux depuis une matrice
+├── lib/common.sh        # Fonctions communes JSON, CSV et inventaire
+└── DPI/
+    └── README.md        # Emplacement des futurs scripts spécifiques
+```
+
+Conserver `bin/lib/common.sh` avec les deux scripts lors de leur copie sur un
+poste de contrôle. Cette bibliothèque ne réalise aucun contrôle à son chargement
+et n'a pas besoin d'être copiée sur les sources SSH : seules les fonctions
+nécessaires sont transmises à chaque exécution distante.
+
+Le répertoire `bin/DPI` accueille vos scripts spécifiques de collecte d'informations
+sur la plateforme. Son contenu n'est exécuté automatiquement par aucun des deux
+scripts ; lancer explicitement les scripts que vous y ajouterez.

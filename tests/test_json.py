@@ -8,18 +8,26 @@ import tempfile
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'bin/checkplateforme.sh'
+FLOW_SCRIPT = SCRIPT.with_name('checkflux.sh')
+
+
+def script_functions(script=SCRIPT):
+    common = (SCRIPT.parent / 'lib/common.sh').read_text()
+    body = script.read_text().rsplit('main "$@"', 1)[0]
+    body = '\n'.join(line for line in body.splitlines() if not line.startswith('source '))
+    return common + '\n' + body
 
 
 class JsonReportTests(unittest.TestCase):
     def test_escaping(self):
-        source = SCRIPT.read_text().rsplit('main "$@"', 1)[0]
+        source = script_functions()
         value = 'guillemets " antislash \\ tab\t ligne\n contrôle\x01 français'
         result = subprocess.run(['bash', '-c', source + '\njson_string "$1"', 'test', value],
                                 capture_output=True, text=True, check=True)
         self.assertEqual(json.loads(result.stdout), value)
 
     def test_filesystems_json(self):
-        source = SCRIPT.read_text().rsplit('main "$@"', 1)[0]
+        source = script_functions()
         table = ('Filesystem 1024-blocks Used Available Capacity Mounted on\n'
                  '/dev/mapper/root 10000 4000 6000 40% /\n'
                  'tmpfs 2000 0 2000 0% /run\n'
@@ -45,7 +53,7 @@ class JsonReportTests(unittest.TestCase):
             result = subprocess.run(command, capture_output=True, text=True)
             data = json.loads(report.read_text())
             self.assertEqual(data['exit_code'], result.returncode)
-            self.assertEqual(data['flows'], [])
+            self.assertNotIn('flows', data)
             self.assertEqual(data['servers'][0]['data']['expectations'], [])
             self.assertIn('INFO CPU', result.stderr)
             metrics = data['servers'][0]['data']
@@ -82,7 +90,7 @@ class JsonReportTests(unittest.TestCase):
                 self.assertNotEqual(server['exit_code'], 255)
 
     def test_csv_formats_and_invalid_rows(self):
-        source = SCRIPT.read_text().rsplit('main "$@"', 1)[0]
+        source = script_functions()
         cases = [
             ('server;;', ['server', '', '']),
             ('server;audit;2222', ['server', 'audit', '2222']),
@@ -120,7 +128,7 @@ class JsonReportTests(unittest.TestCase):
             self.assertIn('cpu', data['servers'][0]['data'])
 
     def test_flow_probe_tcp_and_udp(self):
-        source = SCRIPT.read_text().rsplit('main "$@"', 1)[0]
+        source = script_functions(FLOW_SCRIPT)
         def probe(port, protocol='tcp'):
             result = subprocess.run(['bash', '-c', source + '\nprobe_flow 127.0.0.1 "$1" "$2"',
                                      'test', str(port), protocol], capture_output=True, text=True)
@@ -139,7 +147,7 @@ class JsonReportTests(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertEqual(data['status'], 'indeterminate')
 
-    def test_optional_matrix_with_remote_source(self):
+    def test_flux_matrix_with_remote_source(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             ssh = root / 'ssh'
@@ -151,11 +159,13 @@ class JsonReportTests(unittest.TestCase):
             matrix.write_text('source;destination;port;protocole;description\n'
                               'source01;127.0.0.1;53;udp;"DNS; test"\n')
             report = root / 'report.json'
-            result = subprocess.run(['bash', str(SCRIPT), '--inventory', str(inventory),
+            result = subprocess.run(['bash', str(FLOW_SCRIPT), '--inventory', str(inventory),
                                      '--flows', str(matrix), '--json', str(report)],
                                     env=dict(os.environ, PATH=directory + ':' + os.environ['PATH']),
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 2)
+            self.assertNotIn('INFO CPU', result.stderr)
+            self.assertNotIn('servers', json.loads(report.read_text()))
             flows = json.loads(report.read_text())['flows']
             self.assertEqual(flows[0]['source'], 'source01')
             self.assertEqual(flows[0]['description'], 'DNS; test')
@@ -171,14 +181,14 @@ class JsonReportTests(unittest.TestCase):
                 matrix = root / 'flows.csv'
                 matrix.write_text(row)
                 report = root / 'report.json'
-                result = subprocess.run(['bash', str(SCRIPT), '--localhost',
+                result = subprocess.run(['bash', str(FLOW_SCRIPT), '--localhost',
                                          '--flows', str(matrix), '--json', str(report)],
                                         capture_output=True, text=True)
                 self.assertEqual(result.returncode, 2)
                 self.assertFalse(report.exists())
 
     def test_flow_timeout_and_dns_status(self):
-        source = SCRIPT.read_text().rsplit('main "$@"', 1)[0]
+        source = script_functions(FLOW_SCRIPT)
         for code, status in [(124, 'timeout'), (3, 'dns_error')]:
             result = subprocess.run(['bash', '-c', source +
                                      '\ntimeout() { return ' + str(code) + '; }\nprobe_flow host 22 tcp'],
@@ -187,7 +197,7 @@ class JsonReportTests(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout)['status'], status)
 
     def test_expectations_comparison_and_missing_mount(self):
-        source = SCRIPT.read_text().rsplit('main "$@"', 1)[0]
+        source = script_functions()
         command = source + r'''
 expected_hosts=(localhost localhost localhost localhost localhost localhost)
 expected_resources=(cpu ram swap filesystem_size filesystem_size filesystem_size)
@@ -253,6 +263,31 @@ printf '{"checks":%s,"failed":%s,"errors":%s}' "$checks" "$failed" "$errors"
                                             capture_output=True, text=True)
                     self.assertEqual(result.returncode, 2)
                     self.assertFalse(report.exists())
+
+    def test_separate_options_and_dpi(self):
+        result = subprocess.run(['bash', str(SCRIPT), '--localhost', '--flows', 'missing.csv'],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        result = subprocess.run(['bash', str(FLOW_SCRIPT), '--localhost',
+                                 '--expectations', 'missing.csv'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertTrue((SCRIPT.parent / 'DPI/README.md').is_file())
+
+    def test_flux_only_success_and_default_report(self):
+        with tempfile.TemporaryDirectory() as directory, socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen()
+            matrix = Path(directory) / 'flows.csv'
+            matrix.write_text(f'localhost;127.0.0.1;{listener.getsockname()[1]};tcp;test\n')
+            # Lancement depuis un autre répertoire : résolution correcte de la bibliothèque.
+            result = subprocess.run(['bash', str(FLOW_SCRIPT), '--localhost', '--flows', str(matrix)],
+                                    cwd=directory, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0)
+            report = json.loads((Path(directory) / 'rapport-flux.json').read_text())
+            self.assertEqual(report['exit_code'], 0)
+            self.assertEqual(report['flows'][0]['result']['status'], 'accessible')
+            self.assertNotIn('servers', report)
+            self.assertFalse((Path(directory) / 'rapport.json').exists())
 
     def test_remote_transport_and_continuation(self):
         with tempfile.TemporaryDirectory() as directory:
