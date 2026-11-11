@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -12,10 +13,7 @@ FLOW_SCRIPT = SCRIPT.with_name('checkflux.sh')
 
 
 def script_functions(script=SCRIPT):
-    common = (SCRIPT.parent / 'lib/common.sh').read_text()
-    body = script.read_text().rsplit('main "$@"', 1)[0]
-    body = '\n'.join(line for line in body.splitlines() if not line.startswith('source '))
-    return common + '\n' + body
+    return script.read_text().rsplit('main "$@"', 1)[0]
 
 
 class JsonReportTests(unittest.TestCase):
@@ -279,7 +277,7 @@ printf '{"checks":%s,"failed":%s,"errors":%s}' "$checks" "$failed" "$errors"
             listener.listen()
             matrix = Path(directory) / 'flows.csv'
             matrix.write_text(f'localhost;127.0.0.1;{listener.getsockname()[1]};tcp;test\n')
-            # Lancement depuis un autre répertoire : résolution correcte de la bibliothèque.
+            # Lancement depuis un autre répertoire.
             result = subprocess.run(['bash', str(FLOW_SCRIPT), '--localhost', '--flows', str(matrix)],
                                     cwd=directory, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0)
@@ -288,6 +286,33 @@ printf '{"checks":%s,"failed":%s,"errors":%s}' "$checks" "$failed" "$errors"
             self.assertEqual(report['flows'][0]['result']['status'], 'accessible')
             self.assertNotIn('servers', report)
             self.assertFalse((Path(directory) / 'rapport.json').exists())
+
+    def test_standalone_delivery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for original in (SCRIPT, FLOW_SCRIPT):
+                with self.subTest(script=original.name):
+                    delivery = root / original.stem
+                    delivery.mkdir()
+                    script = delivery / original.name
+                    shutil.copyfile(original, script)
+                    self.assertEqual(list(delivery.iterdir()), [script])
+                    inventory = root / (original.stem + '.csv')
+                    inventory.write_text('host;user;port\nlocalhost;;\n')
+                    report = root / (original.stem + '.json')
+                    command = ['bash', str(script), '--inventory', str(inventory), '--json', str(report)]
+                    if original == FLOW_SCRIPT:
+                        matrix = root / 'flows.csv'
+                        matrix.write_text('localhost;127.0.0.1;53;udp;test\n')
+                        command += ['--flows', str(matrix)]
+                    result = subprocess.run(command, cwd='/', capture_output=True, text=True)
+                    data = json.loads(report.read_text())
+                    self.assertEqual(data['exit_code'], result.returncode)
+                    if original == SCRIPT:
+                        self.assertIn('cpu', data['servers'][0]['data'])
+                    else:
+                        self.assertEqual(data['flows'][0]['result']['status'], 'indeterminate')
+                    self.assertNotIn('No such file', result.stderr)
 
     def test_remote_transport_and_continuation(self):
         with tempfile.TemporaryDirectory() as directory:

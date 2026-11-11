@@ -63,7 +63,6 @@ sans paquet supplémentaire. df peut attendre sur un montage réseau défaillant
 ```bash
 bash -n bin/checkplateforme.sh
 bash -n bin/checkflux.sh
-bash -n bin/lib/common.sh
 python3 tests/test_json.py
 ```
 
@@ -217,15 +216,14 @@ le seuil de livraison, plutôt qu'une égalité stricte avec la capacité nomina
 bin/
 ├── checkplateforme.sh   # Collecte et comparaison aux attendus
 ├── checkflux.sh         # Tests des flux depuis une matrice
-├── lib/common.sh        # Fonctions communes JSON, CSV et inventaire
 └── DPI/
     └── README.md        # Emplacement des futurs scripts spécifiques
 ```
 
-Conserver `bin/lib/common.sh` avec les deux scripts lors de leur copie sur un
-poste de contrôle. Cette bibliothèque ne réalise aucun contrôle à son chargement
-et n'a pas besoin d'être copiée sur les sources SSH : seules les fonctions
-nécessaires sont transmises à chaque exécution distante.
+Chaque script est **autonome** : livrer uniquement `checkplateforme.sh` ou
+`checkflux.sh` au client, avec les CSV nécessaires au contrôle choisi.
+Aucun fichier shell à importer ni bibliothèque commune à installer.
+Les fonctions nécessaires aux sources SSH sont transmises par le script.
 
 Le répertoire `bin/DPI` accueille vos scripts spécifiques de collecte d'informations
 sur la plateforme. Son contenu n'est exécuté automatiquement par aucun des deux
