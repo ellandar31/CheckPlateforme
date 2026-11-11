@@ -113,6 +113,66 @@ class NodesVisualizerTests(unittest.TestCase):
             self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'))
             browser.close()
 
+    def test_merged_packages_matrix_and_server_detail(self):
+        with tempfile.TemporaryDirectory() as directory, sync_playwright() as pw:
+            def package(name, version='1.0'):
+                return dict(name=name, epoch=0, version=version, release='1.el9',
+                            architecture='x86_64', package_manager='rpm', installed_at_unix=1)
+            report = Path(directory) / 'nodes.json'
+            report.write_text(json.dumps({'nodes': [
+                dict(hostname='node01', ip='192.0.2.1', cpu={'model':'CPU test'},
+                     rpms=[package('kernel'), package('kernel', '2.0'), package('only-one')]),
+                dict(hostname='node02', rpms=[package('kernel')]),
+                dict(hostname='empty', rpms=[]), dict(hostname='legacy')]}))
+            invalid = Path(directory) / 'invalid.json'
+            invalid.write_text('{"nodes":[{"hostname":"bad","rpms":["invalid"]}]}')
+            browser = pw.chromium.launch(executable_path=shutil.which('chromium'), args=['--no-sandbox'])
+            page = browser.new_page(viewport={'width':1280,'height':900})
+            errors, requests = [], []
+            page.on('pageerror', lambda e: errors.append(str(e)))
+            page.on('request', lambda r: requests.append(r.url))
+            page.context.set_offline(True)
+            page.set_content(HTML.read_text())
+            page.locator('#file').set_input_files(str(report))
+            page.wait_for_selector('.server')
+            self.assertEqual(page.get_by_role('button', name='Voir le détail du serveur', exact=True).count(), 4)
+            page.locator('#search').fill('192.0.2.1')
+            self.assertEqual(page.locator('.server').count(),1)
+            page.locator('#packages-view').click()
+            self.assertEqual(page.locator('#search').input_value(),'')
+            self.assertEqual(page.locator('.matrix tbody tr').count(),2)
+            self.assertEqual(page.locator('.matrix thead th').count(),5)
+            only = page.locator('.matrix tbody tr').filter(has=page.get_by_role('rowheader', name='only-one', exact=True))
+            self.assertEqual(only.locator('td').nth(1).inner_text(),'Non listé')
+            self.assertEqual(only.locator('td').nth(2).inner_text(),'Inconnu')
+            self.assertIn('Paquets non collectés',page.locator('.matrix thead').inner_text())
+            page.locator('#package-difference').select_option('different')
+            self.assertEqual(page.locator('.matrix tbody tr').count(),2)
+            page.locator('#search').fill('kernel')
+            self.assertEqual(page.locator('.matrix tbody tr').count(),1)
+            self.assertEqual(page.locator('.matrix tbody .version').count(),3)
+            page.get_by_role('button', name='node01', exact=True).click()
+            self.assertIn('CPU test',page.locator('.server-detail').inner_text())
+            self.assertEqual(page.locator('#back').inner_text(),'← Retour aux packages')
+            page.locator('#back').click()
+            self.assertEqual(page.locator('.matrix tbody tr').count(),1)
+            self.assertTrue(page.pdf().startswith(b'%PDF'))
+            page.locator('#servers-view').click()
+            self.assertEqual(page.locator('#search').input_value(),'192.0.2.1')
+            self.assertEqual(page.locator('.server').count(),1)
+            page.locator('.details-button').click()
+            self.assertEqual(page.locator('.server-detail').count(),1)
+            page.locator('#back').click()
+            page.locator('#file').set_input_files(str(invalid))
+            page.wait_for_selector('#error',state='visible')
+            self.assertEqual(page.locator('.server').count(),1)
+            page.locator('#packages-view').click()
+            page.set_viewport_size({'width':390,'height':844})
+            self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'))
+            self.assertEqual(requests,[])
+            self.assertFalse(errors,errors)
+            browser.close()
+
 
 if __name__ == '__main__':
     unittest.main()

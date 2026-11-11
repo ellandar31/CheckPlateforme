@@ -277,7 +277,8 @@ bash bin/DPI/checkpackages.sh --inventory examples/serveurs.csv --json packages-
 ```
 
 Même inventaire CSV à séparateur `;`, collecte locale ou via SSH, sans sudo ni
-installation supplémentaire. Affichage console et JSON dédié `package_inventory`.
+installation supplémentaire. Résumé de collecte en console et liste détaillée
+dans le JSON dédié `package_inventory`.
 Détails et prérequis dans [bin/DPI/README.md](bin/DPI/README.md).
 Ce JSON DPI dispose d'un visualiseur autonome dédié : `visualizer/packages.html`.
 
@@ -453,3 +454,21 @@ Le repli dpkg est automatique si RPM échoue. Si les deux collectes échouent,
 2. Comme le format nodes ne contient pas de statut d'erreur par nœud, conserver
 les diagnostics console pour distinguer une collecte de paquets impossible.
 `checkpackages.sh` reste disponible pour une collecte indépendante.
+
+
+### Visualiseur nodes unifié
+
+Un seul fichier **`visualizer/nodes.html`** permet maintenant de consulter le JSON
+complet de `checknodes.sh` :
+
+- **Synthèse des serveurs** : blocs, RAM/swap et jauges filesystem ;
+- **Packages** : matrice des paquets de `nodes[].rpms`, une colonne par serveur ;
+- **Détail du serveur** : accessible depuis le nom, le bouton de la synthèse ou
+  l'en-tête d'une colonne packages, avec retour à la vue précédente.
+
+Les filtres et la recherche facilitent la comparaison ; une liste de paquets vide
+ou absente est signalée comme inconnue. Il n'est plus nécessaire de produire ou
+charger un second JSON pour voir les packages de nodes.
+Les listes de paquets ne sont plus imprimées dans la console de `checknodes.sh`
+ni de `checkpackages.sh` ; seuls les nombres, bilans et erreurs y restent.
+Le visualiseur packages indépendant est conservé pour ses rapports spécifiques.

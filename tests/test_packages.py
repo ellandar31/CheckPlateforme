@@ -42,7 +42,8 @@ class PackageTests(unittest.TestCase):
                 self.assertEqual(collected['packages'][1], dict(name='kernel', epoch=1,
                                   version='5.14.0', release='100.el9', architecture='x86_64',
                                   installed_at_unix=1700000001))
-            self.assertIn('bash | 0:5.1.8-9.el9', result.stderr)
+            self.assertIn('Nombre de paquets : 2', result.stderr)
+            self.assertNotIn('bash | 0:5.1.8-9.el9', result.stderr)
             original = report.read_bytes()
             self.assertEqual(subprocess.run(command, capture_output=True).returncode, 2)
             self.assertEqual(report.read_bytes(), original)

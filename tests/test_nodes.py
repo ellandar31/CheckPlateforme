@@ -63,6 +63,8 @@ class NodesTests(unittest.TestCase):
                                                       available=1000, percentUsed='50%', mount='/mnt/data with spaces'))
                 self.assertEqual(len(node['rpms']), 1)
                 self.assertEqual(node['rpms'][0]['name'], 'bash')
+                self.assertNotIn('bash |', result.stderr)
+                self.assertNotIn('NOM |', result.stderr)
                 self.assertEqual(node['rpms'][0]['package_manager'], 'rpm')
                 self.assertEqual('SYNTHETIC_TEST_ONLY' in report.read_text(), include)
                 self.assertTrue(all(isinstance(x, str) for x in node['processes']))

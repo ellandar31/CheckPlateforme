@@ -127,7 +127,6 @@ collect_debian_packages() {
     if ! output=$(LC_ALL=C dpkg-query -W -f='${db:Status-Status}\t${Package}\t${Version}\t${Architecture}\n'); then
         error='Échec de lecture de la base dpkg'; rc=2; return
     fi
-    printf 'NOM | VERSION DEBIAN | ARCHITECTURE\n'
     while IFS= read -r line; do
         [[ -n $line ]] || continue
         rest=${line//$'\t'/}; tabs=$((${#line}-${#rest}))
@@ -143,7 +142,6 @@ collect_debian_packages() {
         if [[ ! $epoch =~ ^[0-9]{1,9}$ || -z $version ]]; then error='Version Debian invalide'; rc=2; return; fi
         packages+="$separator"'{"package_manager":'"$(json_string "$manager")"',"name":'"$(json_string "$name")"',"epoch":'"$(json_number "$epoch")"',"version":'"$(json_string "$version")"',"release":'"$(json_string "$release")"',"architecture":'"$(json_string "$arch")"',"version_full":'"$(json_string "$full")"',"installed_at_unix":null}'
         separator=','; ((count+=1))
-        printf '%s | %s | %s\n' "$name" "$full" "$arch"
     done <<< "$output"
     if (( ! count )); then error='Inventaire dpkg vide : aucune collecte certifiée'; rc=2; fi
 }
@@ -158,7 +156,6 @@ collect_node_packages() {
         if [[ -z $output ]]; then
             error='Inventaire RPM vide : aucune collecte certifiée'; rc=2
         else
-            printf 'NOM | EPOCH:VERSION-RELEASE | ARCHITECTURE | INSTALLATION (UNIX)\n'
             while IFS= read -r line; do
                 # Six champs non vides ; ne pas accepter une réponse tronquée.
                 rest=${line//$'\t'/}; tabs=$((${#line}-${#rest}))
@@ -169,7 +166,6 @@ collect_node_packages() {
                 fi
                 packages+="$separator"'{"package_manager":'"$(json_string "$manager")"',"name":'"$(json_string "$name")"',"epoch":'"$(json_number "$epoch")"',"version":'"$(json_string "$version")"',"release":'"$(json_string "$release")"',"architecture":'"$(json_string "$arch")"',"installed_at_unix":'"$(json_number "$installed")"'}'
                 separator=','; ((count+=1))
-                printf '%s | %s:%s-%s | %s | %s\n' "$name" "$epoch" "$version" "$release" "$arch" "$installed"
             done <<< "$output"
         fi
     else

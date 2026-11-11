@@ -36,7 +36,8 @@ Les autres serveurs utilisent SSH avec authentification non interactive et
 vérification stricte des clés d'hôte, comme les autres scripts.
 Une cible inaccessible n'empêche pas de traiter les suivantes.
 
-La console affiche les paquets de chaque serveur. Le JSON par défaut est
+La console affiche uniquement la cible, le nombre de paquets, les erreurs et le
+bilan de collecte ; la liste détaillée reste dans le JSON. Le JSON par défaut est
 `rapport-packages.json` ; un rapport existant n'est jamais écrasé.
 Le tableau `package_inventory` contient, pour chaque cible, `target`, `exit_code`
 et `data` (ou `null` si la collecte distante n'a pas pu être exécutée).
@@ -237,3 +238,26 @@ une date fiable d'installation. Aucun horodatage n'est inventé.
 colonne/fiche et affiche la version Debian complète. Les dates dpkg sont indiquées
 comme non disponibles. Les comparaisons distinguent RPM et dpkg ; elles ne font
 pas d'équivalence entre paquets ou architectures de distributions différentes.
+
+
+## Visualiseur nodes unifié : serveurs et packages
+
+Livrer le seul fichier `visualizer/nodes.html` avec le JSON de `checknodes.sh`.
+Son bandeau propose **Synthèse des serveurs** et **Packages** : la seconde vue
+compare directement `nodes[].rpms`, sans charger un second rapport.
+Les fonctions et styles sont embarqués dans le HTML, sans dépendance à
+`visualizer/packages.html`.
+
+Les noms de serveurs et le bouton « Voir le détail du serveur » ouvrent la fiche
+validée précédemment. Depuis la matrice, cliquer sur un en-tête de serveur ouvre
+la même fiche, puis « Retour aux packages » ramène au tableau filtré.
+Les recherches sont mémorisées séparément pour les deux vues et le filtre serveur
+est partagé. La matrice propose aussi les filtres architecture et différences,
+avec 100 lignes par défaut et un bouton pour afficher toute la liste.
+
+Pour respecter les limites du format nodes, une liste `rpms` vide ou absente reste
+inconnue. « Non listé » désigne un paquet qui ne figure pas dans une liste non vide,
+pas une absence certifiée sur le serveur. Les différences portent sur les listes
+exportées, sans inventer un résultat de collecte absent du JSON.
+`visualizer/packages.html` reste disponible pour les rapports indépendants de
+`checkpackages.sh`. Les deux scripts ne détaillent plus les paquets en console.
