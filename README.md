@@ -217,7 +217,8 @@ bin/
 ├── checkplateforme.sh   # Collecte et comparaison aux attendus
 ├── checkflux.sh         # Tests des flux depuis une matrice
 └── DPI/
-    └── README.md        # Emplacement des futurs scripts spécifiques
+    ├── checkpackages.sh # Inventaire RPM par serveur
+    └── README.md        # Documentation des scripts spécifiques
 ```
 
 Chaque script est **autonome** : livrer uniquement `checkplateforme.sh` ou
@@ -262,3 +263,18 @@ uniquement pour ces tests, pas pour les clients) :
 ```bash
 python3 tests/test_visualizer.py
 ```
+
+## DPI : paquets installés sur la plateforme
+
+Le script autonome `bin/DPI/checkpackages.sh` collecte les paquets RPM de chaque
+serveur, avec leur version complète, architecture et date d'installation :
+
+```bash
+bash bin/DPI/checkpackages.sh --localhost --json packages-local.json
+bash bin/DPI/checkpackages.sh --inventory examples/serveurs.csv --json packages-parc.json
+```
+
+Même inventaire CSV à séparateur `;`, collecte locale ou via SSH, sans sudo ni
+installation supplémentaire. Affichage console et JSON dédié `package_inventory`.
+Détails et prérequis dans [bin/DPI/README.md](bin/DPI/README.md).
+Ce JSON DPI n'est pas encore pris en charge par les vues plateforme/flux du visualiseur.
