@@ -46,6 +46,8 @@ class PackageVisualizerTests(unittest.TestCase):
             # file:// bloqué par la politique du navigateur géré : charger le HTML exact.
             page.set_content(html.read_text())
             page.locator('#file').set_input_files(str(report))
+            page.wait_for_selector('.matrix')
+            page.locator('#detail-view').click()
             page.wait_for_function("() => document.querySelectorAll('.server').length === 3")
             self.assertEqual(page.locator('tbody tr').count(), 100)
             self.assertIn('Échec RPM', page.locator('#results').inner_text())
@@ -80,6 +82,59 @@ class PackageVisualizerTests(unittest.TestCase):
             self.assertTrue(page.locator('#welcome').is_visible())
             self.assertFalse(errors, errors)
             self.assertEqual(requests, [])
+            browser.close()
+
+    def test_rpm_server_matrix_versions_absences_and_unknown(self):
+        with tempfile.TemporaryDirectory() as directory, sync_playwright() as pw:
+            root = Path(directory)
+            def server(name, packages):
+                return dict(target=name, exit_code=0, data=dict(hostname=name, package_manager='rpm',
+                            package_count=len(packages), packages=packages, error=None, exit_code=0))
+            old, new = package('kernel'), package('kernel')
+            old['version'] = '5.14.0'
+            new['version'] = '5.14.1'
+            matrix = {'package_inventory': [
+                server('node01', [package('bash'), old, new, package('only-one', 'noarch')]),
+                server('node02', [package('bash'), old]),
+                dict(target='offline', exit_code=255, data=None)], 'exit_code': 2}
+            report = root / 'matrix.json'
+            report.write_text(json.dumps(matrix))
+            browser = pw.chromium.launch(executable_path=shutil.which('chromium'), args=['--no-sandbox'])
+            page = browser.new_page(viewport={'width': 1280, 'height': 900})
+            errors, requests = [], []
+            page.on('pageerror', lambda e: errors.append(str(e)))
+            page.on('request', lambda r: requests.append(r.url))
+            page.context.set_offline(True)
+            page.set_content(HTML.read_text())
+            page.locator('#file').set_input_files(str(report))
+            page.wait_for_selector('.matrix')
+            self.assertEqual(page.locator('#matrix-view').get_attribute('aria-pressed'), 'true')
+            self.assertEqual(page.locator('.matrix thead th').count(), 4)
+            self.assertEqual(page.locator('.matrix tbody tr').count(), 3)
+            self.assertEqual(page.locator('.matrix tbody tr.different').count(), 2)
+            kernel = page.locator('.matrix tbody tr').filter(has=page.get_by_role('rowheader', name='kernel', exact=True))
+            self.assertEqual(kernel.locator('td').nth(0).locator('.version').count(), 2)
+            self.assertIn('5.14.1', kernel.inner_text())
+            missing = page.locator('.matrix tbody tr').filter(has=page.get_by_role('rowheader', name='only-one', exact=True))
+            self.assertEqual(missing.locator('td').nth(1).inner_text(), 'Absent')
+            self.assertIn('Inconnu', missing.locator('td').nth(2).inner_text())
+            page.locator('#difference').select_option('different')
+            self.assertEqual(page.locator('.matrix tbody tr').count(), 2)
+            self.assertNotIn('bash', page.locator('.matrix tbody').inner_text())
+            page.locator('#search').fill('kernel')
+            self.assertEqual(page.locator('.matrix tbody tr').count(), 1)
+            page.locator('#difference').select_option('unknown')
+            self.assertEqual(page.locator('.matrix tbody tr').count(), 1)
+            page.locator('#search').fill('')
+            page.locator('#difference').select_option('all')
+            page.locator('#arch').select_option('noarch')
+            self.assertEqual(page.locator('.matrix tbody tr').count(), 1)
+            self.assertIn('Absent', page.locator('.matrix tbody').inner_text())
+            self.assertTrue(page.pdf().startswith(b'%PDF'))
+            page.set_viewport_size({'width': 390, 'height': 844})
+            self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'))
+            self.assertEqual(requests, [])
+            self.assertFalse(errors, errors)
             browser.close()
 
     def test_empty_report(self):

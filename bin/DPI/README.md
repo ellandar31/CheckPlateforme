@@ -61,6 +61,9 @@ Ce rapport DPI dispose d'un visualiseur dédié et autonome :
 `visualizer/packages.html`. Livrer ce seul fichier HTML avec le JSON, l'ouvrir dans
 le navigateur, puis sélectionner le rapport packages. Recherche, filtres par
 serveur et architecture, erreurs de collecte et impression PDF sont disponibles.
+La vue par défaut compare les versions RPM en lignes avec les serveurs en colonnes ;
+le détail par serveur reste accessible dans le second onglet. Les absences sont
+distinguées des collectes indisponibles, et les versions multiples sont conservées.
 Les rapports plateforme/flux restent dans `visualizer/index.html`.
 
 ## Processus Java en cours

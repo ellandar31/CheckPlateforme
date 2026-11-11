@@ -399,3 +399,28 @@ de `appServers` à la racine est rattachée par `hostname`, `nodeHostname` ou `n
 égal au nom du serveur. Les colonnes utilisent `env`/`environment`,
 `plateforme`/`platform`, `serveur`/`name`, `xmx`/`XMX` et `port`. Sans ces données,
 aucune application ni valeur XMX/port n'est inventée.
+
+### Comparaison des RPM entre serveurs
+
+`visualizer/packages.html` ouvre désormais par défaut une matrice : **une ligne
+par nom de RPM et une colonne par serveur**. Chaque cellule affiche toutes les
+versions installées sous la forme `epoch:version-release [architecture]`.
+L'onglet « Détail par serveur » conserve les dates d'installation et les fiches
+individuelles.
+
+La recherche filtre les noms et les versions. Les filtres « Différences et
+absences » et « Comparaison incomplète » permettent d'isoler les lignes utiles.
+Les différences entre collectes réussies sont surlignées. « Absent » ne s'affiche
+que pour une collecte réussie ; un serveur en erreur reste « Inconnu ». Une
+collecte partielle n'est jamais utilisée pour certifier une absence ou une égalité.
+Avec une architecture sélectionnée, la présence et les différences portent sur
+cette architecture uniquement. Un seul serveur réussi ne permet pas de comparer.
+
+La matrice conserve plusieurs versions du même paquet (par exemple les noyaux)
+et distingue les architectures. Elle compare les ensembles de versions présentes,
+sans classer les versions RPM ni déterminer laquelle est la plus récente.
+Les dates d'installation ne participent pas à la comparaison.
+
+Les en-têtes et noms de RPM restent visibles lors du défilement du tableau.
+Les premières 100 lignes sont affichées, avec un bouton pour afficher toute la
+matrice filtrée avant impression. La vue reste autonome et utilisable hors ligne.
