@@ -219,6 +219,7 @@ bin/
 └── DPI/
     ├── checkpackages.sh # Inventaire RPM par serveur
     ├── checkjava.sh     # Processus Java en cours
+    ├── checknodes.sh    # Export au format nodes.json
     └── README.md        # Documentation des scripts spécifiques
 ```
 
@@ -329,3 +330,20 @@ python3 tests/test_packages_visualizer.py
 ```
 
 Playwright et Chromium sont requis uniquement pour ces tests de développement.
+
+## DPI : export nodes.json
+
+Le script autonome `bin/DPI/checknodes.sh` produit le format documentaire `nodes` :
+identité réseau, OS/JDK, uptime/charge, processus Java, CPU, mémoire, interfaces et
+disques. Il collecte une machine ou la plateforme entière :
+
+```bash
+bash bin/DPI/checknodes.sh --localhost --json nodes-local.json
+bash bin/DPI/checknodes.sh --inventory examples/serveurs.csv --json nodes-parc.json
+```
+
+Les arguments Java complets nécessitent `--include-command-line` (risque de secrets
+dans les arguments). Les identifiants sont neufs par défaut, ou fournis avec
+`--id` et `--oid`. Le tableau `rpms` et les collections applicatives restent vides,
+comme dans le modèle fourni. Le détail du schéma, des unités et des erreurs est
+documenté dans [bin/DPI/README.md](bin/DPI/README.md).
