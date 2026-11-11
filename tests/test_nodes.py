@@ -22,6 +22,7 @@ class NodesTests(unittest.TestCase):
             'timeout': 'shift 3; exec "$@"',
             'df': "printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n/dev/root 1000 200 800 20%% /\\n/dev/data 2000 1000 1000 50%% /mnt/data with spaces\\n'",
             'ps': 'case "$*" in *args=*) echo \'1.2 123 service java -Dpassword=SYNTHETIC_TEST_ONLY -jar app.jar\' ;; *) echo "1.2 123 service java" ;; esac',
+            'rpm': "printf 'bash\\t0\\t5.1\\t1.el9\\tx86_64\\t1700000000\\n'",
             'ssh': 'case "$*" in *badhost*) printf partial; exit 255 ;; esac; bash -s',
         }
         for name, body in commands.items():
@@ -48,6 +49,7 @@ class NodesTests(unittest.TestCase):
                 self.assertRegex(data['_id']['$oid'], r'^[0-9a-f]{24}$')
                 self.assertRegex(data['id'], r'^[0-9a-f]{40}$')
                 self.assertEqual(len(data['nodes']), 1)
+                self.assertEqual(data['nodes'][0]['rpms'][0]['name'], 'bash')
                 node = data['nodes'][0]
                 self.assertEqual(set(node), NODE_KEYS)
                 self.assertIsInstance(node['lastUpdate'], int)
@@ -59,7 +61,9 @@ class NodesTests(unittest.TestCase):
                 self.assertEqual(node['memory']['swapUsed'], node['memory']['swapTotal']-node['memory']['swapFree'])
                 self.assertEqual(node['disks'][1], dict(name='/dev/data', total=2000, used=1000,
                                                       available=1000, percentUsed='50%', mount='/mnt/data with spaces'))
-                self.assertEqual(node['rpms'], [])
+                self.assertEqual(len(node['rpms']), 1)
+                self.assertEqual(node['rpms'][0]['name'], 'bash')
+                self.assertEqual(node['rpms'][0]['package_manager'], 'rpm')
                 self.assertEqual('SYNTHETIC_TEST_ONLY' in report.read_text(), include)
                 self.assertTrue(all(isinstance(x, str) for x in node['processes']))
                 original = report.read_bytes()
@@ -81,8 +85,54 @@ class NodesTests(unittest.TestCase):
             self.assertEqual(data['id'], 'document-test')
             self.assertEqual(data['_id']['$oid'], 'f'*24)
             self.assertEqual(len(data['nodes']), 1)
+            self.assertEqual(data['nodes'][0]['rpms'][0]['name'], 'bash')
             self.assertNotIn({}, data['nodes'])
             self.assertIn('nœud omis', result.stderr)
+
+    def test_embedded_packages_match_standalone_and_dpkg_fallback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            env = self.fixtures(root)
+            script = root / SCRIPT.name
+            shutil.copyfile(SCRIPT, script)
+            for manager in ['rpm', 'dpkg']:
+                if manager == 'dpkg':
+                    (root / 'rpm').write_text('#!/bin/bash\nexit 1\n')
+                    dpkg = root / 'dpkg-query'
+                    dpkg.write_text("#!/bin/bash\nprintf 'installed\\tnative\\t2:1.0-1ubuntu1\\tamd64\\nconfig-files\\tremoved\\t1.0\\tall\\n'\n")
+                    dpkg.chmod(0o755)
+                report = root / f'nodes-{manager}.json'
+                result = subprocess.run(['bash', str(script), '--localhost', '--json', str(report)],
+                                        cwd='/', env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                rpms = json.loads(report.read_text())['nodes'][0]['rpms']
+                self.assertEqual(len(rpms), 1)
+                self.assertEqual(rpms[0]['package_manager'], manager)
+                standalone = root / f'packages-{manager}.json'
+                result = subprocess.run(['bash', str(SCRIPT.with_name('checkpackages.sh')), '--localhost',
+                                         '--json', str(standalone)], env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0)
+                expected = json.loads(standalone.read_text())['package_inventory'][0]['data']['packages']
+                actual = [{k: v for k, v in package.items() if k != 'package_manager'} for package in rpms]
+                self.assertEqual(actual, expected)
+
+    def test_package_failure_preserves_system_node(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            env = self.fixtures(root)
+            (root / 'rpm').write_text('#!/bin/bash\nexit 1\n')
+            dpkg = root / 'dpkg-query'
+            dpkg.write_text('#!/bin/bash\nexit 1\n')
+            dpkg.chmod(0o755)
+            report = root / 'nodes.json'
+            result = subprocess.run(['bash', str(SCRIPT), '--localhost', '--json', str(report)],
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            node = json.loads(report.read_text())['nodes'][0]
+            self.assertEqual(node['rpms'], [])
+            self.assertEqual(node['hostname'], 'node01')
+            self.assertGreater(node['memory']['memTotal'], 0)
+            self.assertIn('Échec de lecture de la base dpkg', result.stderr)
 
     def test_invalid_inventory_and_oid(self):
         with tempfile.TemporaryDirectory() as directory:

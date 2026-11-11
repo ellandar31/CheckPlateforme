@@ -344,8 +344,8 @@ bash bin/DPI/checknodes.sh --inventory examples/serveurs.csv --json nodes-parc.j
 
 Les arguments Java complets nécessitent `--include-command-line` (risque de secrets
 dans les arguments). Les identifiants sont neufs par défaut, ou fournis avec
-`--id` et `--oid`. Le tableau `rpms` et les collections applicatives restent vides,
-comme dans le modèle fourni. Le détail du schéma, des unités et des erreurs est
+`--id` et `--oid`. Le tableau `rpms` contient les paquets installés (RPM ou repli dpkg automatique).
+Les collections applicatives restent vides. Le détail du schéma, des unités et des erreurs est
 documenté dans [bin/DPI/README.md](bin/DPI/README.md).
 
 ## Visualiseur nodes (DPI)
@@ -439,3 +439,17 @@ APT de mise à jour. Le JSON indique le gestionnaire réellement utilisé et la
 raison du repli. Le visualiseur packages prend en charge RPM et dpkg, y compris
 les versions Debian sans révision et l'absence de date d'installation.
 Aucune option supplémentaire n’est nécessaire.
+
+### Paquets intégrés à checknodes
+
+`checknodes.sh` embarque désormais la collecte de `checkpackages.sh` : aucun appel
+ni import de ce dernier n'est nécessaire. Chaque `nodes[].rpms` contient les
+paquets du serveur, avec `package_manager`, `name`, `epoch`, `version`, `release`,
+`architecture` et `installed_at_unix`. Pour Debian/Ubuntu, `version_full` conserve
+la version exacte et la date d'installation reste `null`.
+
+Le repli dpkg est automatique si RPM échoue. Si les deux collectes échouent,
+`rpms` reste vide, les autres mesures du nœud sont conservées et le script retourne
+2. Comme le format nodes ne contient pas de statut d'erreur par nœud, conserver
+les diagnostics console pour distinguer une collecte de paquets impossible.
+`checkpackages.sh` reste disponible pour une collecte indépendante.

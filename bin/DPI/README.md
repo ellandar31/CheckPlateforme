@@ -151,8 +151,15 @@ Chaque entrée de `nodes` contient :
   sous forme de chaînes ; ce ne sont pas des débits) ;
 - `disks` : `name`, `total`, `used`, `available`, `percentUsed`, `mount` ;
   capacités numériques en kio et pourcentage avec son symbole `%` ;
-- `rpms` : tableau vide, comme dans le modèle, qui ne définit pas le schéma d'un
-  élément RPM. Utiliser `checkpackages.sh` pour l'inventaire détaillé des paquets.
+- `rpms` : tableau des paquets installés, collectés directement par le script.
+  Chaque entrée contient `package_manager` (`rpm` ou `dpkg`), `name`, `epoch`,
+  `version`, `release`, `architecture`, `installed_at_unix`. Les entrées dpkg
+  comportent aussi `version_full` et une date d'installation `null`.
+  La collecte et son repli sont identiques à `checkpackages.sh`, dont le code est
+  embarqué : aucune dépendance à ce fichier pour livrer `checknodes.sh` seul.
+  Une erreur RPM déclenche automatiquement le repli dpkg. Si les deux échouent,
+  `rpms` reste vide et le code global vaut 2, sans perdre les mesures système.
+  Les motifs d'erreur et de repli sont affichés en console.
 
 Par défaut, les chaînes `processes` contiennent le nom de commande sans ses
 arguments. Pour obtenir les lignes de commande complètes comme dans le modèle :

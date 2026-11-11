@@ -117,7 +117,80 @@ nodes_disks_json() {
 usage() {
     printf 'Usage : %s (--localhost | --inventory SERVEURS.csv) [--json nodes.json] [--id IDENTIFIANT] [--oid OBJECTID] [--include-command-line]\n' "$0"
 }
+# Appelée dans collect_node_packages : variables de collecte partagées par portée Bash.
+collect_debian_packages() {
+    local output='' line status name full epoch version release arch rest tabs
+    packages=''; separator=''; count=0; rc=0; error=''; manager=dpkg
+    if ! command -v dpkg-query >/dev/null 2>&1; then
+        error='Repli APT impossible : dpkg-query absent'; rc=2; return
+    fi
+    if ! output=$(LC_ALL=C dpkg-query -W -f='${db:Status-Status}\t${Package}\t${Version}\t${Architecture}\n'); then
+        error='Échec de lecture de la base dpkg'; rc=2; return
+    fi
+    printf 'NOM | VERSION DEBIAN | ARCHITECTURE\n'
+    while IFS= read -r line; do
+        [[ -n $line ]] || continue
+        rest=${line//$'\t'/}; tabs=$((${#line}-${#rest}))
+        IFS=$'\t' read -r status name full arch <<< "$line"
+        if [[ $tabs != 3 || -z $status || -z $name ]]; then
+            error='Réponse dpkg invalide ou incomplète'; rc=2; return
+        fi
+        [[ $status == installed ]] || continue
+        if [[ -z $full || -z $arch ]]; then error='Réponse dpkg invalide'; rc=2; return; fi
+        epoch=0; version=$full; release=''
+        if [[ $version == *:* ]]; then epoch=${version%%:*}; version=${version#*:}; fi
+        if [[ $version == *-* ]]; then release=${version##*-}; version=${version%-*}; fi
+        if [[ ! $epoch =~ ^[0-9]{1,9}$ || -z $version ]]; then error='Version Debian invalide'; rc=2; return; fi
+        packages+="$separator"'{"package_manager":'"$(json_string "$manager")"',"name":'"$(json_string "$name")"',"epoch":'"$(json_number "$epoch")"',"version":'"$(json_string "$version")"',"release":'"$(json_string "$release")"',"architecture":'"$(json_string "$arch")"',"version_full":'"$(json_string "$full")"',"installed_at_unix":null}'
+        separator=','; ((count+=1))
+        printf '%s | %s | %s\n' "$name" "$full" "$arch"
+    done <<< "$output"
+    if (( ! count )); then error='Inventaire dpkg vide : aucune collecte certifiée'; rc=2; fi
+}
+collect_node_packages() {
+    local manager=rpm rpm_error='' fallback_used=false
+    local output='' packages='' separator='' count=0 rc=0 error=''
+    local name epoch version release arch installed extra line tabs rest
+    printf '\n=== Paquets RPM : %s ===\n' "${HOSTNAME:-serveur}"
+    if ! command -v rpm >/dev/null 2>&1; then
+        error='Commande rpm absente : inventaire RHEL impossible'; rc=2
+    elif output=$(LC_ALL=C rpm -qa --queryformat '%{NAME}\t%{EPOCHNUM}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\t%{INSTALLTIME}\n'); then
+        if [[ -z $output ]]; then
+            error='Inventaire RPM vide : aucune collecte certifiée'; rc=2
+        else
+            printf 'NOM | EPOCH:VERSION-RELEASE | ARCHITECTURE | INSTALLATION (UNIX)\n'
+            while IFS= read -r line; do
+                # Six champs non vides ; ne pas accepter une réponse tronquée.
+                rest=${line//$'\t'/}; tabs=$((${#line}-${#rest}))
+                IFS=$'\t' read -r name epoch version release arch installed extra <<< "$line"
+                if [[ $tabs != 5 || -z $name || -z $version || -z $release || -z $arch ||
+                      ! $epoch =~ ^[0-9]+$ || ! $installed =~ ^[0-9]+$ ]]; then
+                    error='Réponse RPM invalide ou incomplète'; rc=2; break
+                fi
+                packages+="$separator"'{"package_manager":'"$(json_string "$manager")"',"name":'"$(json_string "$name")"',"epoch":'"$(json_number "$epoch")"',"version":'"$(json_string "$version")"',"release":'"$(json_string "$release")"',"architecture":'"$(json_string "$arch")"',"installed_at_unix":'"$(json_number "$installed")"'}'
+                separator=','; ((count+=1))
+                printf '%s | %s:%s-%s | %s | %s\n' "$name" "$epoch" "$version" "$release" "$arch" "$installed"
+            done <<< "$output"
+        fi
+    else
+        error='Échec de lecture de la base RPM'; rc=2
+    fi
+    if ((rc)); then
+        rpm_error=$error; fallback_used=true
+        printf 'AVERTISSEMENT RPM : %s ; repli vers les paquets APT/dpkg\n' "$rpm_error"
+        collect_debian_packages
+    fi
+    if ((rc)); then
+        # Ne pas présenter un inventaire partiel comme complet.
+        packages=''; count=0
+        printf 'ERREUR %s\n' "$error"
+    fi
+    printf 'Nombre de paquets : %s\n' "$count"
+    printf '[%s]\n' "$packages" >&3
+    return "$rc"
+}
 collect_node() {
+    local rpms='[]' packages_rc=0
     local include_args=${1:-0} rc=0 now host domain='' fqdn='' ip='' os='' redhat='' jdk='' uptime='' load=''
     local key value rest line model='' cpu=0 frequency='' bogomips='' net='' sep='' interface tx rx
     local mt='' mf='' ma='' st='' sf='' mu='' su='' disks='[]' processes='' psep='' raw='' ps_rc columns
@@ -202,6 +275,8 @@ collect_node() {
             processes+="$psep$(json_string "$line")"; psep=','
         done <<< "$raw"
     else rc=2; fi
+    rpms=$(collect_node_packages 3>&1 1>&2); packages_rc=$?
+    (( packages_rc == 0 )) || rc=2
     printf 'NODE %s : CPU=%s, RAM=%s kio, code=%s\n' "$host" "$cpu" "${mt:-inconnue}" "$rc"
     {
         printf '{"lastUpdate":%s,"hostname":' "$now"; json_string "$host"
@@ -223,7 +298,7 @@ collect_node() {
         printf ',"swapTotal":'; json_number "$st"
         printf ',"swapFree":'; json_number "$sf"
         printf ',"swapUsed":'; json_number "$su"
-        printf '},"network":[%s],"disks":%s,"rpms":[]}\n' "$net" "$disks"
+        printf '},"network":[%s],"disks":%s,"rpms":%s}\n' "$net" "$disks" "$rpms"
     } >&3
     return "$rc"
 }
@@ -264,7 +339,7 @@ main() {
             *)
                 options=(-T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -p "${ports[i]}")
                 [[ -z ${users[i]} ]] || options+=(-l "${users[i]}")
-                payload="$(declare -f json_string json_number nodes_disks_json collect_node)"$'\n'
+                payload="$(declare -f json_string json_number nodes_disks_json collect_debian_packages collect_node_packages collect_node)"$'\n'
                 printf -v payload '%scollect_node %q 3>&1 1>&2\n' "$payload" "$include_args"
                 data=$(ssh "${options[@]}" "${hosts[i]}" 'bash -s' <<< "$payload"); rc=$? ;;
         esac
