@@ -57,8 +57,11 @@ liste partielle n'est présentée comme complète.
 
 Codes de retour : **0** toutes les collectes réussies, **2** au moins une erreur.
 Les échecs SSH conservent aussi leur code (par exemple 255) dans l'entrée de cible.
-Ce rapport DPI est distinct des deux formats plateforme/flux pris en charge par
-le visualiseur HTML actuel.
+Ce rapport DPI dispose d'un visualiseur dédié et autonome :
+`visualizer/packages.html`. Livrer ce seul fichier HTML avec le JSON, l'ouvrir dans
+le navigateur, puis sélectionner le rapport packages. Recherche, filtres par
+serveur et architecture, erreurs de collecte et impression PDF sont disponibles.
+Les rapports plateforme/flux restent dans `visualizer/index.html`.
 
 ## Processus Java en cours
 

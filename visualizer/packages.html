@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>CheckPlateforme DPI — Packages installés</title>
+<style>
+:root{color-scheme:light;--ink:#17283d;--muted:#53657a;--line:#dce4ed;--blue:#2159b5;--bg:#f3f6fa}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif}main{max-width:1240px;margin:auto;padding:32px 24px 64px}header{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:24px}.brand{font-weight:750;color:var(--blue);font-size:13px;letter-spacing:.1em}h1{font-size:30px;line-height:1.2;margin:8px 0}h2{font-size:21px;margin:0}h3{font-size:16px;margin:22px 0 8px}p{margin:8px 0}.muted{color:var(--muted)}button,.upload{font:inherit;border:1px solid var(--line);border-radius:8px;padding:10px 16px;background:white;color:var(--ink);cursor:pointer}button:hover,.upload:hover{border-color:var(--blue)}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #84b5ff;outline-offset:3px}.tabs{display:flex;gap:8px;margin-bottom:20px}.tabs button[aria-pressed=true]{background:var(--blue);color:white;border-color:var(--blue)}.load{padding:24px;border:1px dashed #9eafc3;border-radius:12px;background:white}.load input{max-width:100%}.load label{display:block;font-weight:650;margin-bottom:8px}.error{color:#9e2020;background:#fff0f0;padding:14px;border-radius:8px;margin:16px 0}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}.stat{background:white;border:1px solid var(--line);border-radius:10px;padding:16px}.stat strong{display:block;font-size:26px}.toolbar{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0}.toolbar label{display:flex;gap:8px;align-items:center}.toolbar input,.toolbar select{font:inherit;padding:9px 12px;border:1px solid #aebdcd;border-radius:6px;background:white}.toolbar input{min-width:260px}.server,.flowwrap{background:white;border:1px solid var(--line);border-radius:12px;margin:16px 0;padding:22px}.serverhead{display:flex;justify-content:space-between;align-items:center;gap:12px}.badge{display:inline-block;border-radius:20px;padding:4px 10px;font-size:13px;font-weight:650;white-space:nowrap}.ok{background:#e1f3e9;color:#12603b}.fail{background:#ffeded;color:#9c2424}.warn{background:#fff0d6;color:#795000}.neutral{background:#e8edf4;color:#42556c}.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}.fact{border-left:3px solid #c8d9f3;padding:4px 12px}.fact b{display:block}.tablebox{overflow:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{background:#f5f8fc;white-space:nowrap;color:var(--muted);font-weight:600}td{overflow-wrap:anywhere}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f5f8fc;padding:12px;border-radius:8px;font-size:13px}summary{cursor:pointer;font-weight:600;padding:8px 0}.empty{text-align:center;padding:36px;color:var(--muted)}footer{margin-top:28px;font-size:13px;color:var(--muted)}[hidden]{display:none!important}@media(max-width:700px){main{padding:20px 12px}.stats,.facts{grid-template-columns:repeat(2,1fr)}header{align-items:flex-start}h1{font-size:25px}.serverhead{align-items:flex-start}.toolbar label{flex-wrap:wrap}.toolbar input{min-width:0;width:100%}}@media print{body{background:white}main{max-width:none;padding:0}.tabs,.load,.toolbar,header button,footer{display:none}.server,.flowwrap{break-inside:avoid}details{display:block}.tablebox{overflow:visible}.stats{grid-template-columns:repeat(4,1fr)}}
+.toolbar select{max-width:100%}.more{margin-top:14px}@media print{.more{display:none}}
+</style>
+</head>
+<body>
+<main>
+<header><div><div class="brand">CHECKPLATEFORME / DPI</div><h1>Packages installés</h1><p class="muted">Inventaire RPM de la plateforme, serveur par serveur.</p></div><button id="print" type="button">Imprimer / PDF</button></header>
+<section class="load"><label for="file">Ouvrir le rapport JSON de checkpackages.sh</label><input id="file" type="file" accept=".json,application/json"><p class="muted">Un fichier HTML autonome. Lecture locale, sans envoi réseau ni installation.</p></section>
+<div id="error" class="error" role="alert" hidden></div>
+<section id="report" hidden><p id="filename" class="muted"></p><div id="stats" class="stats"></div>
+<div class="toolbar"><label>Serveur <select id="server"><option value="all">Tous les serveurs</option></select></label><label>Architecture <select id="arch"><option value="all">Toutes</option></select></label><label>Rechercher <input id="search" type="search" placeholder="Nom, version, release…"></label><label>Collecte <select id="status"><option value="all">Tous les résultats</option><option value="issues">Erreurs uniquement</option></select></label><button id="clear" type="button">Retirer le rapport</button></div>
+<p id="count" class="muted" aria-live="polite"></p><div id="results"></div></section>
+<div id="welcome" class="empty">Sélectionnez un rapport packages pour consulter l’inventaire de livraison.</div>
+<footer>Ce rapport décrit les paquets enregistrés dans la base RPM au moment de la collecte. Il ne constitue pas une analyse de vulnérabilités et ne recense pas les logiciels installés hors RPM. Les versions et architectures multiples sont conservées.</footer>
+</main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+let report=null,filename='',generation=0;const expanded=new Set();
+const object=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
+const nonnegative=x=>Number.isSafeInteger(x)&&x>=0;
+function node(tag,text,cls){const n=document.createElement(tag);if(text!==undefined)n.textContent=String(text);if(cls)n.className=cls;return n;}
+function badge(text,cls){return node('span',text,'badge '+cls);}
+function status(code){return code===0?['Collecte réussie','ok']:[`Erreur de collecte (${code})`,'warn'];}
+function issue(server){return server.exit_code!==0||server.data===null||server.data.exit_code!==0||server.data.error!==null;}
+function validate(data){
+ if(!object(data)||!nonnegative(data.exit_code)||!Array.isArray(data.package_inventory))throw Error('Rapport packages attendu : tableau package_inventory et exit_code. Les JSON plateforme, flux et Java utilisent un autre format.');
+ for(const s of data.package_inventory){
+  if(!object(s)||typeof s.target!=='string'||!nonnegative(s.exit_code)||!(s.data===null||object(s.data)))throw Error('Entrée serveur invalide.');
+  if(s.data===null)continue;
+  const d=s.data;
+  if(typeof d.hostname!=='string'||d.package_manager!=='rpm'||!nonnegative(d.package_count)||!Array.isArray(d.packages)||d.package_count!==d.packages.length||!nonnegative(d.exit_code)||!(d.error===null||typeof d.error==='string'))throw Error(`Inventaire incomplet ou invalide pour ${s.target}.`);
+  for(const p of d.packages){
+   if(!object(p)||!['name','version','release','architecture'].every(k=>typeof p[k]==='string'&&p[k].length>0)||!nonnegative(p.epoch)||!nonnegative(p.installed_at_unix))throw Error(`Entrée package invalide pour ${s.target}.`);
+  }
+ }
+ return data;
+}
+function installDate(value){if(value===0)return 'Non renseignée (0)';const date=new Date(value*1000);if(!Number.isFinite(date.getTime()))return `Horodatage invalide (${value})`;return new Intl.DateTimeFormat('fr-FR',{dateStyle:'medium',timeStyle:'short',timeZone:'UTC'}).format(date)+' UTC';}
+function selectOptions(id,options,all){const select=$(id);select.replaceChildren();for(const [value,label] of [['all',all],...options]){const option=node('option',label);option.value=value;select.append(option);}}
+function resetFilters(){
+ $('search').value='';$('status').value='all';expanded.clear();
+ selectOptions('server',report.package_inventory.map((s,i)=>[String(i),s.target]),'Tous les serveurs');
+ const arches=new Set(report.package_inventory.flatMap(s=>s.data?s.data.packages.map(p=>p.architecture):[]));
+ selectOptions('arch',[...arches].sort().map(a=>[a,a]),'Toutes');
+}
+function packageTable(packages){
+ const wrap=node('div',undefined,'tablebox'),table=node('table'),head=node('thead'),hr=node('tr');
+ for(const title of ['Package','Epoch','Version','Release','Architecture','Installation (UTC)']){const th=node('th',title);th.scope='col';hr.append(th);}head.append(hr);table.append(head);
+ const body=node('tbody');for(const p of packages){const row=node('tr');for(const value of [p.name,p.epoch,p.version,p.release,p.architecture,installDate(p.installed_at_unix)])row.append(node('td',value));body.append(row);}table.append(body);wrap.append(table);return wrap;
+}
+function render(){
+ $('report').hidden=!report;$('welcome').hidden=!!report;if(!report)return;
+ const servers=report.package_inventory,total=servers.reduce((n,s)=>n+(s.data?s.data.packages.length:0),0),errors=servers.filter(issue).length;
+ $('filename').textContent=`${filename} · Code global : ${report.exit_code}`;
+ $('stats').replaceChildren();
+ for(const [label,value] of [['Résultat global',status(report.exit_code)[0]],['Serveurs',servers.length],['Packages relevés',total],['Collectes à examiner',errors]]){const box=node('div',undefined,'stat');box.append(node('span',label,'muted'),node('strong',value));$('stats').append(box);}
+ const query=$('search').value.trim().toLocaleLowerCase('fr'),architecture=$('arch').value,server=$('server').value;
+ const results=$('results');results.replaceChildren();let shownServers=0,matchedPackages=0;
+ servers.forEach((s,index)=>{
+  if(server!=='all'&&server!==String(index))return;
+  if($('status').value==='issues'&&!issue(s))return;
+  const packages=s.data?s.data.packages:[];
+  const matches=packages.filter(p=>(architecture==='all'||p.architecture===architecture)&&(!query||[p.name,p.epoch,p.version,p.release,p.architecture].some(x=>String(x).toLocaleLowerCase('fr').includes(query))));
+  // Les erreurs sans packages restent visibles : un filtre ne doit pas masquer un échec.
+  if(packages.length&&matches.length===0&&(query||architecture!=='all')&&!issue(s))return;
+  shownServers++;matchedPackages+=matches.length;
+  const card=node('article',undefined,'server'),head=node('div',undefined,'serverhead');
+  const code=s.exit_code!==0?s.exit_code:s.data?.exit_code||0;
+  head.append(node('h2',s.target),issue(s)?badge(`Collecte à examiner (code ${code})`,'warn'):badge(...status(0)));card.append(head);
+  if(s.data===null){card.append(node('p','Collecte indisponible. Consulter les diagnostics SSH de la livraison.','error'));results.append(card);return;}
+  card.append(node('p',`Hôte : ${s.data.hostname} · ${s.data.package_count} package(s) relevé(s)`,'muted'));
+  if(s.data.error)card.append(node('p',s.data.error,'error'));
+  if(!packages.length){card.append(node('p',issue(s)?'Aucun inventaire exploitable pour ce serveur.':'Aucun package dans ce rapport.','muted'));}
+  else if(!matches.length){card.append(node('p','Aucun package ne correspond aux filtres.','muted'));}
+  else{
+   const sorted=[...matches].sort((a,b)=>a.name.localeCompare(b.name)||a.architecture.localeCompare(b.architecture)||a.version.localeCompare(b.version)||a.release.localeCompare(b.release));
+   const shown=expanded.has(index)?sorted:sorted.slice(0,100);
+   card.append(node('p',`${shown.length} / ${matches.length} package(s) correspondant aux filtres`,'muted'),packageTable(shown));
+   if(sorted.length>100){const button=node('button',expanded.has(index)?'Limiter à 100 lignes':`Afficher les ${sorted.length} packages`,'more');button.type='button';button.addEventListener('click',()=>{if(expanded.has(index))expanded.delete(index);else expanded.add(index);render();});card.append(button);}
+  }
+  results.append(card);
+ });
+ $('count').textContent=`${shownServers} / ${servers.length} serveur(s) affiché(s) · ${matchedPackages} package(s) correspondant aux filtres`;
+ if(!shownServers)results.append(node('p',servers.length?'Aucun résultat ne correspond aux filtres.':'Ce rapport ne contient aucun serveur.','empty'));
+}
+$('file').addEventListener('change',async event=>{const file=event.target.files[0];if(!file)return;const ticket=++generation;try{if(file.size>25*1024*1024)throw Error('Fichier trop volumineux (limite : 25 Mio).');const parsed=validate(JSON.parse((await file.text()).replace(/^\uFEFF/,'')));if(ticket!==generation)return;report=parsed;filename=file.name;resetFilters();$('error').hidden=true;render();}catch(error){if(ticket===generation){$('error').textContent=`Impossible de lire le rapport : ${error.message}`;$('error').hidden=false;}}finally{if(ticket===generation)$('file').value='';}});
+for(const id of ['server','arch','status'])$(id).addEventListener('change',()=>{expanded.clear();render();});$('search').addEventListener('input',()=>{expanded.clear();render();});$('clear').addEventListener('click',()=>{generation++;report=null;filename='';expanded.clear();$('error').hidden=true;render();});$('print').addEventListener('click',()=>window.print());
+</script>
+</body>
+</html>

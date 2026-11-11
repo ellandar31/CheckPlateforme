@@ -278,7 +278,7 @@ bash bin/DPI/checkpackages.sh --inventory examples/serveurs.csv --json packages-
 Même inventaire CSV à séparateur `;`, collecte locale ou via SSH, sans sudo ni
 installation supplémentaire. Affichage console et JSON dédié `package_inventory`.
 Détails et prérequis dans [bin/DPI/README.md](bin/DPI/README.md).
-Ce JSON DPI n'est pas encore pris en charge par les vues plateforme/flux du visualiseur.
+Ce JSON DPI dispose d'un visualiseur autonome dédié : `visualizer/packages.html`.
 
 ## DPI : processus Java actifs
 
@@ -296,3 +296,36 @@ ajoute les arguments de lancement (susceptibles de contenir des secrets).
 Les permissions de `/proc` limitent la visibilité du relevé. Détails dans
 [bin/DPI/README.md](bin/DPI/README.md). Le visualiseur plateforme/flux ne prend
 pas encore en charge ce rapport DPI.
+
+## Visualiseur packages (DPI)
+
+Livrer **`visualizer/packages.html`** seul avec le JSON produit par
+`bin/DPI/checkpackages.sh`. Ouvrir le HTML dans un navigateur récent, puis
+sélectionner le rapport packages. Aucun serveur, import, installation ni accès
+Internet n'est nécessaire. Les données restent dans le navigateur jusqu'à la
+fermeture ou l'actualisation de la page ; aucun fichier n'est envoyé.
+
+Ce visualiseur est dédié à `package_inventory`, indépendamment des rapports
+plateforme, flux et Java. Il présente :
+
+- un résumé des serveurs, du nombre de paquets relevés et des erreurs ;
+- un filtre par serveur, architecture et état de collecte ;
+- une recherche par nom, epoch, version, release ou architecture ;
+- les dates d'installation en UTC, sans fusionner les versions/architectures ;
+- une impression / export PDF des résultats affichés.
+
+Les longues listes sont limitées à 100 lignes par serveur : « Afficher les …
+packages » permet de voir toute la liste filtrée avant de l'imprimer. Les erreurs
+sans inventaire restent visibles, même avec une recherche ou un filtre
+architecture. Les rapports incorrects et les compteurs incohérents sont rejetés,
+sans effacer le rapport précédemment chargé. Limite par fichier : 25 Mio.
+
+Le test navigateur utilise le HTML exact en mode hors connexion, car la politique
+du navigateur cloud bloque `file://`. L'ouverture directe du fichier est à vérifier
+sur le poste client selon la politique du navigateur d'entreprise.
+
+```bash
+python3 tests/test_packages_visualizer.py
+```
+
+Playwright et Chromium sont requis uniquement pour ces tests de développement.
