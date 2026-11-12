@@ -1,186 +1,308 @@
-# Scripts spécifiques DPI
+# DPI(1)
 
-Placer ici les scripts spécifiques de collecte d'informations de la plateforme.
-Aucun script de ce répertoire n'est exécuté automatiquement par
-`checkplateforme.sh` ou `checkflux.sh` : lancer explicitement le script souhaité.
+## NOM
 
-Utiliser Bash et les commandes déjà présentes sur RHEL minimal, privilégier les
-collectes en lecture seule et documenter les éventuels prérequis de chaque script.
-Ne pas stocker de mots de passe, clés privées ou rapports contenant des secrets ici.
+checknodes, checkjava — collecter les informations techniques d'une plateforme Linux.
 
-## Processus Java en cours
+## SYNOPSIS
 
-`checkjava.sh` est un script autonome de collecte en lecture seule. Il lit `/proc`
-et n'utilise ni JDK, ni `jps`, ni `jcmd`. Aucune installation ni élévation automatique
-des droits n'est effectuée.
-
-```bash
-bash bin/DPI/checkjava.sh --localhost --json java-local.json
-bash bin/DPI/checkjava.sh --inventory examples/serveurs.csv --json java-parc.json
+```text
+bash bin/DPI/checknodes.sh (--localhost | --inventory FICHIER)
+                          [--json RAPPORT] [--id IDENTIFIANT] [--oid OBJECTID]
+                          [--include-command-line]
+bash bin/DPI/checkjava.sh (--localhost | --inventory FICHIER)
+                         [--json RAPPORT] [--include-command-line]
+bash bin/DPI/checknodes.sh --help
+bash bin/DPI/checkjava.sh --help
 ```
 
-Le même inventaire `host;user;port` et les mêmes règles SSH s'appliquent.
-Les résultats sont affichés dans la console et enregistrés par défaut dans
-`rapport-java.json`. Le tableau `java_inventory` contient une entrée par cible,
-avec son code de retour et les données collectées :
+Les éléments entre crochets sont facultatifs. Choisir exactement un mode parmi
+`--localhost` et `--inventory`. Les exemples s'exécutent depuis la racine du dépôt.
 
-- horodatage UTC de début de collecte (`collected_at_utc`) ;
-- nombre de processus détectés (`process_count`) et tableau `processes` ;
-- PID, PID parent, UID et nom d'utilisateur si résolvable ;
-- nom du processus, état Linux, mémoire résidente en kio et nombre de threads ;
-- chemin de l'exécutable, s'il est accessible ;
-- compteurs des entrées illisibles et des processus disparus pendant le relevé.
+## DESCRIPTION
 
-Les processus dont le nom est `java` ou `java.bin`, ou dont le chemin d'exécutable
-se termine ainsi, sont retenus. Les applications embarquant une JVM dans un autre
-exécutable ou utilisant un binaire Java renommé peuvent ne pas être détectées.
-Ce n'est pas une liste des versions de Java installées.
+**checknodes.sh** produit un document `nodes.json` : identité des machines,
+système, Java, CPU, mémoire, interfaces réseau, disques et paquets installés.
+La collecte des paquets est intégrée, avec repli automatique de RPM vers dpkg.
 
-Pour relever aussi les arguments de lancement, explicitement :
+**checkjava.sh** relève les processus Java visibles dans `/proc`, avec leurs
+identifiants, propriétaires, états, mémoire et threads. Il ne nécessite ni JDK,
+ni `jps`, ni `jcmd` et ne recense pas les versions Java installées.
 
-```bash
-bash bin/DPI/checkjava.sh --inventory examples/serveurs.csv --include-command-line --json java-detail.json
+Les scripts sont autonomes, en lecture seule et sans import d'autre script.
+Aucun paquet n'est installé ; aucune mise à jour ni élévation de droits n'est
+lancée automatiquement. Chaque script doit être exécuté explicitement ; les
+contrôles plateforme et flux ne lancent pas les scripts de ce répertoire.
+
+## OPTIONS
+
+| Option | Commande | Effet |
+| --- | --- | --- |
+| `--localhost` | Les deux | Collecter la machine locale avec le compte courant. |
+| `--inventory FICHIER` | Les deux | Lire les cibles et paramètres SSH dans le CSV. |
+| `--json RAPPORT` | Les deux | Choisir le fichier de sortie ; refuser un fichier existant. |
+| `--include-command-line` | Les deux | Exporter les arguments Java complets. Désactivé par défaut. |
+| `--id IDENTIFIANT` | checknodes | Fixer l'identifiant de document `id` ; valeur non vide. |
+| `--oid OBJECTID` | checknodes | Fixer `_id.$oid` ; exactement 24 caractères hexadécimaux. |
+| `-h`, `--help` | Les deux | Afficher l'aide et quitter. |
+
+Sans identifiants explicites, checknodes génère un nouvel `id` aléatoire de
+40 caractères hexadécimaux et un nouvel `_id.$oid` de 24 caractères. Ils identifient
+le document, pas durablement la plateforme. Aucune connexion à une base de données
+n'est effectuée ; l'import et la mise à jour d'un document relèvent de l'application.
+
+## PRÉREQUIS
+
+| Commande | Outils et accès |
+| --- | --- |
+| checknodes | Bash, `hostname`, `uname`, `df`, `ps` de procps-ng, `timeout` de coreutils, `/proc`, `/sys`. RPM ou dpkg-query pour les paquets. |
+| checkjava | Bash et `/proc`. `readlink` et `getent`, s'ils sont présents, complètent le chemin d'exécutable et le nom d'utilisateur. |
+| Collecte distante | Client OpenSSH sur le poste de contrôle ; Bash et serveur SSH accessibles sur la cible. |
+
+Java est facultatif pour checknodes. S'il est présent dans PATH, `java -version`
+est exécuté sous un délai de 5 secondes, puis arrêté de force une seconde plus
+tard si nécessaire. La résolution FQDN est également bornée quand `timeout` est disponible.
+
+## INVENTAIRE ET SSH
+
+```csv
+host;user;port
+localhost;;
+serveur01;audit;22
+serveur02;audit;2222
 ```
 
-Les arguments peuvent contenir des identifiants, mots de passe ou jetons : cette
-option les écrit tels quels dans la console et le JSON. Par défaut, `arguments`
-vaut `null`. Avec l'option, il contient un tableau préservant chaque argument.
-Le script ne lit pas les variables d'environnement des processus.
+Utiliser le séparateur **`;`** et trois colonnes. L'en-tête est facultatif.
+`host` est obligatoire ; utilisateur vide : compte SSH par défaut ; port vide : 22.
+Les ports acceptés vont de 1 à 65535. Remplacer les noms d'exemple par les vraies cibles.
 
-Il s'agit d'un instantané des **processus visibles par le compte de collecte**,
-dans son espace de PID. `hidepid`, les permissions et les conteneurs peuvent
-masquer des processus : une liste vide n'affirme pas qu'aucune JVM n'existe sur
-l'hôte entier. Un chemin d'exécutable inaccessible reste vide ; une mémoire
-indisponible vaut `null`. Aucun `sudo` n'est lancé automatiquement.
+Les guillemets doubles, CRLF et BOM UTF-8 sont acceptés. Les guillemets internes
+se doublent. Les lignes vides et commentaires commençant par `#` sont ignorés.
+Les champs sur plusieurs lignes ne sont pas acceptés. Le fichier est validé
+avant la collecte.
 
-Codes de retour : **0** collecte réalisée, même si aucun Java n'est visible ;
-**2** collecte impossible ou partielle. Les résultats accessibles sont conservés
-en cas de collecte partielle. Un processus disparu en cours de relevé est compté
-séparément. Une erreur SSH n'empêche pas de traiter les serveurs suivants.
-Le visualiseur HTML plateforme/flux ne lit pas encore ce format DPI.
+`localhost`, `127.0.0.1` et `::1` sont interrogés sans SSH ; utilisateur et port
+sont ignorés pour ces entrées. Les autres cibles utilisent une authentification
+SSH non interactive et une vérification stricte des clés d'hôte. Préparer une
+clé ou un agent et `known_hosts` après vérification des empreintes.
 
-## Export au format nodes.json
+Les cibles sont traitées séquentiellement ; une erreur de connexion n'empêche
+pas de traiter les suivantes. Détails dans le [manuel principal](../../README.md#authentification-ssh).
 
-`checknodes.sh` est autonome et produit l'enveloppe documentaire suivante, avec
-les clés et types du modèle nodes.json : `_id`, `id`, `nodes`, `appModules`,
-`appServers`, `datasources`, `fluxes`, `info`, `jobs`, `licences`, `metadatas`,
-`readme`, `referentiels`, `tablespaces`. Les collections applicatives restent
-vides : elles ne peuvent pas être déduites d'une collecte système.
+## SORTIE
+
+| Commande | Rapport par défaut | Tableau principal |
+| --- | --- | --- |
+| checknodes | `nodes.json` | `nodes` |
+| checkjava | `rapport-java.json` | `java_inventory` |
+
+La console fournit les cibles, compteurs et diagnostics. Les paquets ne sont jamais
+listés en console. Les détails de collecte utilisent aussi stderr en cas de
+réussite : consulter le code de retour pour déterminer l'issue.
+
+### Document nodes
+
+L'enveloppe contient `_id`, `id`, `nodes`, `appModules`, `appServers`, `datasources`,
+`fluxes`, `info`, `jobs`, `licences`, `metadatas`, `readme`, `referentiels`,
+`tablespaces`. Les collections et objets applicatifs restent vides : ces données
+ne sont pas déduites du système.
+
+| Champ du nœud | Type et contenu |
+| --- | --- |
+| `lastUpdate` | Entier : horodatage Unix de début de collecte. |
+| `hostname`, `domain`, `fqdn` | Chaînes : identité locale et nom résolu. |
+| `ip` | Chaîne : première adresse de `hostname -I`, pas nécessairement celle de SSH ou de la route par défaut. |
+| `system.nameOS` | Chaîne : noyau et architecture. |
+| `system.versionRedHat` | Chaîne : `/etc/redhat-release`, sinon nom de l'OS. |
+| `system.versionJDK` | Chaîne : version Java dans PATH, pas la version de chaque JVM active. Vide si Java est absent. |
+| `system.upTime` | Chaîne décimale : secondes depuis le démarrage. |
+| `system.load` | Chaîne : charges à 1, 5 et 15 minutes. |
+| `processes` | Tableau de chaînes : pourcentage mémoire, PID, utilisateur et commande des processus nommés `java` ou `java.bin`. |
+| `cpu.model`, `cpu.nbProc` | Chaînes : modèle et nombre de CPU logiques en ligne. |
+| `cpu.frqProc`, `cpu.bogomips` | Chaînes : MHz et BogoMIPS du premier CPU fournissant ces valeurs. |
+| `memory` | Nombres en kio : `memTotal`, `memFree`, `memUsed`, `swapTotal`, `swapFree`, `swapUsed`. |
+| `network` | Tableau : `nom`, `tx`, `rx`. TX/RX sont des compteurs d'octets cumulés sous forme de chaînes, pas des débits. |
+| `disks` | Tableau : `name`, `total`, `used`, `available`, `percentUsed`, `mount`. Capacités numériques en kio ; pourcentage sous forme de chaîne avec `%`. |
+| `rpms` | Tableau des paquets, au format commun décrit ci-dessous. |
+
+`memFree` désigne la mémoire réellement libre ; `memUsed` est estimé par
+`MemTotal - MemAvailable`. `swapUsed = SwapTotal - SwapFree`.
+Une mesure mémoire inconnue vaut `null` ; une chaîne indisponible reste vide.
+Les objets de remplissage `{}` ne sont pas ajoutés à `nodes`.
+
+### Paquets RPM et APT
+
+Chaque entrée de `nodes[].rpms` contient exactement six champs :
+
+```json
+{"name":"exemple","version":"2:1.0","release":"1ubuntu1","arch":"amd64","size":12288,"group":"utils"}
+```
+
+| Champ | Signification |
+| --- | --- |
+| `name` | Nom du paquet. |
+| `version` | Version ; un epoch non nul est conservé au début, suivi de `:`. |
+| `release` | Release RPM ou révision Debian ; vide pour une version Debian native. |
+| `arch` | Architecture. |
+| `size` | Taille installée, entier en octets. |
+| `group` | Groupe RPM ou section Debian ; chaîne vide si inconnu. |
+
+RPM est interrogé en premier. S'il est absent, échoue ou renvoie une liste vide
+ou invalide, le script interroge automatiquement `dpkg-query`. Seuls les paquets
+Debian à l'état `installed` sont retenus. Aucun paramètre de repli n'est nécessaire.
+
+La taille RPM vient de `%{SIZE}` et le groupe de `%{GROUP}`. Pour Debian,
+`Installed-Size` est multiplié par 1 024 et le groupe vient de `Section`.
+La version Debian est séparée au dernier tiret, sans perdre son epoch.
+Les tailles d'exemple ne constituent pas des exigences de livraison.
+
+Les versions multiples, notamment les noyaux, et architectures multiples sont
+conservées. Les inventaires RPM et dpkg partiels ne sont jamais mélangés.
+Aucune date d'installation n'est collectée. Les logiciels hors des bases RPM/dpkg
+et les logiciels internes aux conteneurs ne sont pas recensés par cette collecte.
+
+### Inventaire Java
+
+Chaque entrée de `java_inventory` contient `target`, `exit_code` et `data`.
+`data` vaut `null` si l'exécution distante n'a pas pu être réalisée.
+
+Les données contiennent `hostname`, `collected_at_utc`, `scope`, `process_count`,
+`processes`, `unreadable_count`, `vanished_count`, `error` et `exit_code`.
+Chaque processus expose `pid`, `ppid`, `uid`, `user`, `name`, `state`, `rss_kib`,
+`threads`, `executable`, `arguments`.
+
+Par défaut, `arguments` vaut `null`. Avec `--include-command-line`, ce champ est
+un tableau qui préserve chaque argument. Les chemins non accessibles restent
+vides et une mémoire indisponible vaut `null`.
+
+## CODES DE RETOUR
+
+| Code | Signification |
+| --- | --- |
+| `0` | Collecte réalisée ; pour checkjava, aucun Java visible est aussi un résultat valide. |
+| `2` | Erreur d'utilisation, d'accès ou de collecte ; résultat partiel ou impossible. |
+
+**checknodes :** les nœuds partiellement collectés restent dans le rapport.
+Les cibles inaccessibles sont omises et signalées en console. Si RPM et dpkg
+échouent, `rpms` reste vide, les mesures système sont conservées et le code vaut 2.
+Le document ne contient ni statut d'erreur par nœud ni code global : conserver
+les diagnostics console et le code retour en plus du JSON.
+
+**checkjava :** les résultats accessibles sont conservés en cas de collecte
+partielle. Les processus disparus pendant le relevé sont comptés séparément.
+Les codes SSH sous-jacents, notamment 255, sont conservés dans les entrées de cible.
+
+## EXEMPLES
+
+Collecter une machine ou une plateforme :
 
 ```bash
 bash bin/DPI/checknodes.sh --localhost --json nodes-local.json
 bash bin/DPI/checknodes.sh --inventory examples/serveurs.csv --json nodes-parc.json
 ```
 
-Chaque entrée de `nodes` contient :
-
-- `lastUpdate` : horodatage Unix de début de collecte ;
-- `hostname`, `domain`, `fqdn` : identité locale et nom résolu ;
-- `ip` : première adresse renvoyée par `hostname -I`, pas nécessairement l'adresse
-  utilisée pour SSH ni celle de la route par défaut ;
-- `system.nameOS` : noyau et architecture ; `versionRedHat` : contenu de
-  `/etc/redhat-release` (sinon nom de l'OS) ; `versionJDK` : première ligne de
-  version de Java accessible dans PATH, pas celle de chaque JVM active ;
-- `system.upTime` : secondes depuis le démarrage, chaîne décimale ; `load` :
-  charges à 1, 5 et 15 minutes, dans une chaîne ;
-- `processes` : lignes `% mémoire, PID, utilisateur, commande`, pour les processus
-  nommés `java` ou `java.bin` ;
-- `cpu.model`, `nbProc`, `frqProc`, `bogomips` : chaînes ; fréquence en MHz et
-  BogoMIPS du premier CPU fournissant ces informations dans `/proc/cpuinfo` ;
-- `memory` : nombres en kio ; `memFree` est réellement libre, `memUsed` est
-  estimé par `MemTotal - MemAvailable`, et `swapUsed = SwapTotal - SwapFree` ;
-- `network` : interfaces avec `nom`, `tx`, `rx` (compteurs d'octets cumulés,
-  sous forme de chaînes ; ce ne sont pas des débits) ;
-- `disks` : `name`, `total`, `used`, `available`, `percentUsed`, `mount` ;
-  capacités numériques en kio et pourcentage avec son symbole `%` ;
-- `rpms` : tableau des paquets installés, collectés directement par le script,
-  avec exactement `name`, `version`, `release`, `arch`, `size` et `group`.
-  Le repli vers dpkg est automatique si RPM est absent ou échoue. Aucune liste
-  de paquets n'est affichée dans la console. En cas d'échec des deux collectes,
-  `rpms` reste vide et le script retourne 2, sans perdre les mesures système.
-
-
-Par défaut, les chaînes `processes` contiennent le nom de commande sans ses
-arguments. Pour obtenir les lignes de commande complètes comme dans le modèle :
+Fixer les identifiants d'un document à importer :
 
 ```bash
-bash bin/DPI/checknodes.sh --inventory examples/serveurs.csv --include-command-line --json nodes-detail.json
+bash bin/DPI/checknodes.sh --localhost --id mon-document \
+  --oid 0123456789abcdef01234567 --json nodes-import.json
 ```
 
-Les arguments sont alors exportés tels quels et peuvent contenir des secrets.
-Les limites de visibilité et de détection des JVM dépendent du compte et des noms
-de processus. Une absence de Java dans PATH donne `versionJDK: ""` ; une valeur
-mémoire impossible à mesurer vaut `null` plutôt qu'un zéro inventé. Les chaînes
-non disponibles restent vides.
-
-Des identifiants neufs sont générés pour chaque document : `_id.$oid` est une
-chaîne hexadécimale de 24 caractères et `id` un identifiant aléatoire de 40 caractères.
-Ce dernier est un identifiant de document, pas une empreinte stable de plateforme.
-Aucun identifiant du modèle utilisateur n'est réutilisé. Pour utiliser des valeurs
-fournies par votre application :
+Relever les JVM actives :
 
 ```bash
-bash bin/DPI/checknodes.sh --localhost --id mon-identifiant --oid 0123456789abcdef01234567 --json nodes-import.json
+bash bin/DPI/checkjava.sh --inventory examples/serveurs.csv --json java-parc.json
 ```
 
-Les scripts n'insèrent rien dans une base de données. Toute mise à jour d'un
-objet existant doit être gérée par votre application avec les identifiants voulus.
+Ajouter explicitement les arguments Java :
 
-Prérequis RHEL usuels : Bash, `hostname`, `uname`, `df`, `ps` (procps-ng),
-`timeout` (coreutils), `/proc` et `/sys`. Java est facultatif ; s'il est présent,
-`java -version` est borné à 5 secondes (arrêt forcé une seconde plus tard).
-Aucun paquet n'est installé, aucun sudo n'est lancé. Le script livré ne dépend
-pas des autres scripts du dépôt. L'inventaire utilise toujours `;` et les mêmes
-paramètres SSH. Les fichiers existants ne sont pas écrasés.
+```bash
+bash bin/DPI/checknodes.sh --localhost --include-command-line --json nodes-detail.json
+bash bin/DPI/checkjava.sh --localhost --include-command-line --json java-detail.json
+```
 
-Code **0** : collecte réalisée ; **2** : au moins une collecte impossible ou
-incomplète. Les nœuds partiellement collectés restent dans le rapport ; les cibles
-inaccessibles sont omises et signalées en console. Pour conserver le schéma du
-modèle, aucun champ d'erreur supplémentaire ni code global n'est inséré dans le
-JSON : conserver également le code de retour et les diagnostics console.
-Les objets `{}` de remplissage du modèle ne sont pas reproduits.
-Le visualiseur autonome `visualizer/nodes.html` affiche ce format. Ouvrir le
-HTML, puis sélectionner le JSON : synthèse par serveur avec jauges RAM/swap/disques,
-puis détail système/CPU/mémoire, réseau et processus Java au clic sur son nom.
-Recherche, filtre par serveur, retour à la synthèse et impression PDF sont disponibles. Aucun import ni
-accès réseau n'est nécessaire. Les entrées `{}` du modèle sont ignorées.
-Le visualiseur ne peut pas déduire les échecs ou les cibles omises depuis le JSON :
-conserver les diagnostics console et le code retour du script.
+Choisir un nouveau chemin JSON à chaque exécution pour ne pas écraser un rapport.
 
+## VISUALISATION
 
-## Paquets intégrés à nodes
+Ouvrir [visualizer/nodes.html](../../visualizer/nodes.html), puis sélectionner le
+JSON de checknodes. Ce seul HTML suffit, sans import, serveur, installation ni
+connexion Internet. Les fichiers restent dans la mémoire de la page et ne sont
+pas transmis ; fermer ou actualiser la page efface le rapport. Limite : 25 Mio.
+L'ouverture directe peut dépendre de la politique du navigateur d'entreprise.
 
-La collecte des paquets est embarquée dans `checknodes.sh`, sans fichier shell
-à importer. Chaque `nodes[].rpms` contient exactement :
+| Vue | Présentation |
+| --- | --- |
+| Synthèse des serveurs | Un bloc par serveur : OS, uptime au relevé, FQDN/IP, charge, barres RAM/swap et jauges filesystem. |
+| Packages | Matrice : une ligne par paquet, une colonne par serveur, versions et architectures multiples conservées. |
+| Détail serveur | Système, mémoire, disques, processus, réseau et CPU ; accès par le nom, le bouton de synthèse ou l'en-tête d'une colonne packages. |
 
-- `name` : nom du paquet ;
-- `version` : version, avec préfixe `epoch:` si l'epoch est non nul ;
-- `release` : release RPM ou révision Debian ; vide pour une version Debian native ;
-- `arch` : architecture ;
-- `size` : taille installée en octets (entier) ;
-- `group` : groupe RPM ou section Debian ; vide si inconnu.
+Le retour du détail conserve les filtres. Les recherches des vues serveurs et
+packages sont mémorisées séparément ; le filtre serveur est partagé.
+L'impression PDF porte sur la vue affichée. Les matrices affichent 100 lignes
+par défaut, avec un bouton pour tout afficher avant impression.
 
-RPM est interrogé en premier. En cas d'absence, d'erreur ou de liste vide/invalide,
-le script utilise `dpkg-query` sans installer de paquet ni lancer de mise à jour.
-Seuls les paquets à l'état `installed` sont retenus. `Installed-Size` est multiplié
-par 1 024 pour obtenir des octets ; `Section` fournit le groupe Debian.
-La version Debian est séparée à son dernier tiret sans perdre son epoch.
+La recherche, l'architecture et les différences filtrent les listes de paquets.
+Taille et groupe sont disponibles au survol d'une version. Les anciens rapports
+avec `architecture` restent lisibles ; leurs tailles manquantes ne sont pas inventées.
+« Non listé » signifie absent d'une liste fournie, pas absence certifiée sur l'hôte.
+Une liste vide ou manquante reste inconnue. Le visualiseur ne reconstitue pas
+les erreurs ni les cibles omises et ne peut pas certifier une collecte complète.
 
-Une erreur des deux gestionnaires conserve le nœud système, laisse `rpms` vide
-et contribue au code 2. Les listes partielles ne sont pas mélangées. La console
-contient uniquement les compteurs et diagnostics, jamais les paquets détaillés.
-Les versions et architectures multiples restent distinctes dans le JSON.
+Les jauges d'occupation sont bleues sous 80 %, orange à partir de 80 % et rouges
+à partir de 90 %. Ce sont des repères visuels, pas des attendus de conformité.
+Le pourcentage mémoire utilise les capacités mesurées ; un swap nul est signalé.
+Les filesystems utilisent `percentUsed`, sinon `used / total`. Les cercles CPU
+montrent des valeurs, pas une utilisation. L'uptime est celui du relevé, pas de
+l'instant de lecture. Les objets `{}` du modèle sont ignorés.
 
-## Visualiseur nodes unifié
+Les données applicatives sont affichées si `node.appServers` existe, ou si
+`appServers` à la racine référence l'hôte via `hostname`, `nodeHostname` ou `node`.
+Les colonnes utilisent `env`/`environment`, `plateforme`/`platform`, `serveur`/`name`,
+`xmx`/`XMX`, `port`. Aucune application ni valeur XMX/port n'est inventée.
 
-Livrer uniquement `visualizer/nodes.html` avec le JSON de `checknodes.sh`.
-Le bandeau **Synthèse des serveurs / Packages** permet de lire les mesures et
-la matrice des paquets dans le même fichier HTML autonome. Le détail du serveur
-reste accessible depuis la synthèse et les en-têtes de la matrice ; le retour
-conserve les filtres. L'impression PDF porte sur la vue actuellement affichée.
+Le format `java_inventory` n'a pas de vue HTML dédiée dans ce dépôt.
 
-Une liste de paquets vide ou absente reste inconnue dans la matrice. « Non listé »
-indique seulement qu'un paquet ne figure pas dans une liste fournie. Les erreurs
-et nœuds omis ne peuvent pas être reconstitués depuis ce format sans statut :
-conserver les diagnostics console. Les anciens rapports utilisant `architecture`
-restent lisibles, avec taille et groupe affichés comme non renseignés.
+## DIAGNOSTICS ET LIMITES
+
+Les processus sont ceux visibles par le compte de collecte dans son espace de PID.
+Les permissions, `hidepid` et les conteneurs peuvent masquer des processus ; une
+liste vide ne prouve pas l'absence de JVM sur l'hôte entier.
+
+checkjava retient un nom `java` ou `java.bin`, ou un exécutable dont le chemin se
+termine ainsi. Les JVM embarquées dans un autre exécutable et les binaires renommés
+peuvent ne pas être détectés. checknodes utilise les noms reconnus par `ps -C`.
+
+`--include-command-line` exporte les arguments tels quels : ils peuvent contenir
+des mots de passe ou jetons, visibles dans les rapports, la console Java ou le
+visualiseur. Les variables d'environnement des processus ne sont pas lues.
+
+Les paquets nécessitent un accès en lecture à la base locale RPM ou dpkg. Un
+échec de RPM n'est pas silencieux : le repli est annoncé en console. Si les deux
+bases sont inutilisables, une liste vide ne doit pas être interprétée comme un
+inventaire réussi. `df` peut attendre sur un montage réseau défaillant.
+
+Pour les erreurs SSH, DNS ou de fichier de sortie, consulter les
+[diagnostics du manuel principal](../../README.md#diagnostics-et-limites).
+
+## FICHIERS
+
+| Chemin | Rôle |
+| --- | --- |
+| `bin/DPI/checknodes.sh` | Collecte nodes et paquets intégrés. |
+| `bin/DPI/checkjava.sh` | Inventaire des processus Java. |
+| `examples/serveurs.csv` | Exemple d'inventaire partagé par les scripts. |
+| `visualizer/nodes.html` | Lecteur nodes autonome, serveurs et packages. |
+| `/proc`, `/sys` | Mesures et identité des processus, CPU, mémoire et interfaces. |
+| `/etc/redhat-release`, `/etc/os-release` | Identification de la distribution. |
+
+Les scripts et le HTML sont livrables séparément ; aucune bibliothèque locale
+à importer n'est nécessaire. Les futurs scripts DPI doivent être lancés explicitement.
+
+## VOIR AUSSI
+
+[Manuel principal](../../README.md), bash(1), ssh(1), proc(5), ps(1), rpm(8), dpkg-query(1), java(1).
+
+## LICENCE
+
+Voir [LICENSE](../../LICENSE).
